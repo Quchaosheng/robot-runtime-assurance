@@ -10,10 +10,8 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
+# ROS 2 is not a pip dependency: source /opt/ros/<distro>/setup.bash instead.
 dev = ["pytest>=8", "jsonschema>=4"]
-
-# ROS 2 is not a pip dependency: it comes from the distribution install.
-# Source /opt/ros/<distro>/setup.bash and the ros2action transport becomes available.
 
 [project.scripts]
 assurance = "assurance.cli:main"
@@ -22,7 +20,7 @@ assurance = "assurance.cli:main"
 packages = ["assurance", "assurance.sut"]
 
 [tool.setuptools.package-data]
-assurance = ["scenarios/*.json"]
+assurance = ["scenarios/**/*.json", "schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
