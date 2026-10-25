@@ -1,0 +1,38 @@
+{
+  "scenario_id": "failures/task-timeout",
+  "title": "Work exceeds the deadline: the harness cancels and the device reports.",
+  "seed": 727,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "600"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 200,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "task_timeout",
+      "task_id": "T1"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I5-stop-acked",
+      "kind": "cancel_then_stop",
+      "task_id": "T1"
+    },
+    {
+      "claim_id": "I8-no-false-success",
+      "kind": "no_false_success",
+      "task_id": "T1"
+    }
+  ],
+  "expect_verdict": "pass"
+}

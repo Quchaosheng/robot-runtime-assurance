@@ -1,0 +1,188 @@
+# Robot Runtime Assurance and System Acceptance
+
+A black-box assurance harness for embodied robot runtimes: it drives a system you do
+not own the internals of, injects the faults that break task safety, and returns
+`confirmed` / `refuted` / `insufficient_evidence` with an evidence bundle someone else
+can re-check.
+
+> This project is a runtime assurance and system acceptance prototype.
+> It is not a functional safety certification implementation.
+> 本项目是运行时保障与系统验收原型，不构成功能安全认证或完整安全系统。
+
+## What problem this solves
+
+Existing tooling tells you a process exited, a topic published, a trace spanned 3 ms,
+a node came up, or a log replays. None of that answers the questions a system owner
+actually asks after a delivery:
+
+| Question | Here |
+| --- | --- |
+| After a cancel, did the robot actually stop? | `I4`, `I5` claims |
+| Did an old task's late ACK confirm the new task? | `I6`, `late_ack_recorded` + `ack_matches_task` |
+| After the device dropped off, did it reach the required terminal state? | `I7`, `terminal_state` |
+| On a resource conflict, was the second task *rejected*, not queued? | `I3`, `conflict_rejected` |
+| Is this pass, fail, or **not provable**? | three-state verdict, never a silent pass |
+| Can someone else re-check this acceptance? | `assure verify` + `assure replay` on the bundle |
+
+## The invariants (the actual product)
+
+These come before any feature. Every claim in every scenario cites one of them.
+
+```
+I1  An unregistered scenario cannot be executed.
+I2  A policy proposal cannot bypass the executor and reach the device directly.
+I3  On a resource claim conflict, the later task must be rejected.
+I4  Cancelling a task must escalate to a STOP.
+I5  A STOP must be followed by the device's ACK and a terminal-state report.
+I6  A late ACK must not complete or contaminate a newer run.
+I7  Device disconnect, process death, or timeout must reach the required terminal state.
+I8  With incomplete evidence the verdict must be insufficient, never pass.
+```
+
+I2 is enforced **structurally** rather than by a claim: the harness only knows
+`start` / `cancel` / `stop` and an action name. There is no code path from this repo
+into a device, so "the model bypassed the executor" is not a test this tool can fail -
+it is a boundary this tool cannot cross. Scenarios that need it use the SUT's
+`claim_policy` to prove the *executor* refuses, which is the observable half of I2.
+
+## Verdicts are three-valued, and that is the point
+
+| Status | Meaning | When the tool is allowed to say it |
+| --- | --- | --- |
+| `confirmed` | every required piece of evidence exists and the invariant holds | only with an independent observation (device state, or a kill/crash - **not** an exit the harness requested) |
+| `refuted` | evidence proves the invariant was violated | a concrete event contradicts it |
+| `insufficient_evidence` | the evidence needed simply is not there | missing event, no observation, stopped recording too early |
+
+An ACK is a *claim by the SUT*, not proof. A run where the harness shut the SUT down
+cleanly has no independent observation, so it lands in `insufficient_evidence`,
+never `confirmed`. This is deliberate and covered by tests.
+
+## Quickstart
+
+No ROS 2 required for the default path.
+
+```bash
+git clone <this repo> && cd robot-runtime-assurance
+python3 -m pip install -e ".[dev]"
+
+assure doctor                      # what this machine can and cannot test
+assure list                        # 12 shipped scenarios
+assure run nominal/normal-task     # writes runs/nominal-normal-task--local
+assure report runs/nominal-normal-task--local
+assure verify runs/nominal-normal-task--local
+assure replay runs/nominal-normal-task--local
+assure junit  runs/nominal-normal-task--local --out junit.xml
+```
+
+`assure run` exits non-zero when the run did not match the scenario's
+`expect_verdict`, so it drops straight into CI.
+
+## Scenarios that ship
+
+| Scenario | Exercises | Expected |
+| --- | --- | --- |
+| `nominal/normal-task` | happy path, all four claims | pass |
+| `cancellation/cancel-then-stop` | cancel → STOP → device ACK (I4/I5) | pass |
+| `cancellation/late-ack-after-cancel` | late ACK is recorded, does not resurrect the task (I6) | pass |
+| `cancellation/stale-ack-does-not-pollute-next-task` | task B must not be confirmed by A's stale ACK (I6) | **refute** |
+| `failures/ack-dropped` | device works, ACK lost → timeout, idle | pass |
+| `failures/ack-late` | ACK after deadline is evidence, not a pass | pass |
+| `failures/runtime-killed` | SIGKILL mid-task, no ACK afterwards | pass |
+| `failures/task-timeout` | deadline exceeded → cancel → STOP ACK | pass |
+| `failures/resource-claim-conflict` | second claimant refused (I3) | pass |
+| `failures/evidence-missing` | device reports no state → must be unprovable (I8) | **insufficient** |
+| `negative-controls/sut-grants-conflicting-claim` | broken SUT must be caught | **refute** |
+| `negative-controls/sut-ignores-cancel` | broken SUT must be caught | **refute** |
+
+`expect_verdict` is part of the scenario. A negative control that stops being refuted
+fails CI — that is how the tool proves it can still detect a regression in itself.
+
+## Fault injection: what is real and what is not
+
+Injection is **session-level**, at the harness↔SUT boundary: drop an ACK, delay it,
+answer with a stale epoch, kill the process, hold a resource, cancel at the deadline.
+This is a deliberate constraint, not a shortcut — see `docs/architecture.md`:
+
+```
+tc netem        unavailable (needs CAP_NET_ADMIN)
+iptables        unavailable
+vcan device     unavailable (RTNETLINK: Operation not permitted)
+cgroup writes   unavailable
+ptrace          unavailable
+```
+
+So this tool does **not** claim to test the kernel CAN stack under packet loss. It
+tests that the *runtime and device protocol* stay safe when the conversation is
+hostile. `assure doctor` prints each backend's availability and reason; nothing is
+silently skipped.
+
+## Transports
+
+| Transport | Needs | What it proves |
+| --- | --- | --- |
+| `mock` | Python only | the whole decision path, deterministically |
+| `ros2action` | `source /opt/ros/<distro>/setup.bash` | the same claims over a real DDS action server, with real deadline/cancel timing |
+
+The ROS 2 path drives `action_tutorials_interfaces/Fibonacci`, a stock action, so the
+harness needs **no generated message package from the SUT** - importing the SUT's IDL
+would already break the black-box boundary.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+assure doctor                                  # ros2action: available
+ROS_DOMAIN_ID=42 assure run failures/task-timeout --transport ros2action
+```
+
+## Evidence bundle
+
+```
+runs/<scenario>--<id>/
+  deterministic/     scenario, timeline, verdict, coverage   <- re-judging these must reproduce the digest
+  observed/          raw event stream                        <- comparable, never replayed
+  manifest.json
+  checksums.sha256
+  COMPLETE                                           <- written last, so half a bundle is never a run
+```
+
+`assure verify` recomputes every checksum and re-derives the verdict from
+`deterministic/`. Tampering with the timeline is detected (tested).
+
+## Replay: three kinds, only one promised in v0.1
+
+| Kind | Status | Meaning |
+| --- | --- | --- |
+| evidence replay | **implemented** | re-derive the verdict from the bundle; digest must match |
+| fixture replay | **implemented** | re-run the scenario against the deterministic mock SUT |
+| hardware replay | out of scope | physical robots are not bit-reproducible; not promised |
+
+`assure replay <bundle>` does fixture replay and compares the verdict digest.
+
+## Status
+
+- 50 tests, all green. `python3 -m pytest`
+- 12 scenarios, 3 of which must fail or come back unprovable, every run.
+- Zero runtime dependencies for the default path (`mock` transport, stdlib only).
+
+### Not implemented yet, on purpose
+
+gRPC and SocketCAN adapters, cross-layer trace import (RoboTraceOpt), a web UI, and
+anything resembling certification. The mock SUT is a stand-in; the ROS 2 path is the
+only real transport today.
+
+## Repository layout
+
+```
+assurance/
+  schemas/        scenario.schema.json, event.schema.json, evidence.schema.json
+  scenarios/      nominal/ cancellation/ failures/ negative-controls/
+  registry.py     I1: unregistered scenarios are refused
+  transports.py   mock + ros2action
+  runner.py       executes a scenario, never decides pass/fail
+  oracle.py       timeline -> three-state verdict (pure function)
+  evidence.py     bundle writing, checksum + replay verification, JUnit
+  timeline.py     append-only run timeline
+  cli.py          assure: doctor list run verify report replay junit selftest
+  sut/            deterministic mock SUT + ROS 2 action SUT
+docs/             architecture.md, invariants.md, acceptance-matrix.md
+tests/            oracle, scenarios end-to-end, registry + CLI
+```

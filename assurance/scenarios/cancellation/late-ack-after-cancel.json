@@ -1,0 +1,42 @@
+{
+  "scenario_id": "cancellation/late-ack-after-cancel",
+  "title": "The device answers after we cancelled: the answer must not resurrect the task.",
+  "seed": 595,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "20",
+    "--delay-ack",
+    "900"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 200,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "delay_ack",
+      "task_id": "T1",
+      "delay_ms": 900
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I6-late-ack-recorded",
+      "kind": "late_ack_recorded",
+      "task_id": "T1",
+      "min_delay_ms": 400
+    },
+    {
+      "claim_id": "I6-late-ack-does-not-complete",
+      "kind": "no_late_completion",
+      "task_id": "T1"
+    }
+  ],
+  "expect_verdict": "pass"
+}

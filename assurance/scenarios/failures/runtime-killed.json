@@ -1,0 +1,38 @@
+{
+  "scenario_id": "failures/runtime-killed",
+  "title": "The runtime process is killed mid-task: nothing may ACK afterwards.",
+  "seed": 844,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "400"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 900,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "kill_sut",
+      "task_id": "T1",
+      "at_ms": 120
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I7-death-observed",
+      "kind": "no_ack_after_exit"
+    },
+    {
+      "claim_id": "I8-no-false-success",
+      "kind": "no_false_success",
+      "task_id": "T1"
+    }
+  ],
+  "expect_verdict": "pass"
+}

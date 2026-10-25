@@ -1,0 +1,41 @@
+{
+  "scenario_id": "failures/resource-claim-conflict",
+  "title": "Two tasks, one resource: the second must be refused, not queued.",
+  "seed": 231,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "400"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 900,
+      "expect": "done"
+    },
+    {
+      "task_id": "T2",
+      "epoch": 2,
+      "resource": "arm",
+      "deadline_ms": 900,
+      "expect": "done",
+      "start_after_ms": 50
+    }
+  ],
+  "faults": [
+    {
+      "kind": "claim_conflict",
+      "task_id": "T2"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I3-conflict-rejected",
+      "kind": "conflict_rejected",
+      "task_id": "T2"
+    }
+  ],
+  "expect_verdict": "pass"
+}

@@ -1,0 +1,35 @@
+{
+  "scenario_id": "negative-controls/sut-ignores-cancel",
+  "title": "NEGATIVE CONTROL: a SUT that ignores cancellation must be refuted on I4.",
+  "seed": 492,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "800",
+    "--cancel-policy",
+    "ignore"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 200,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "task_timeout",
+      "task_id": "T1"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I4-stop-sent",
+      "kind": "cancel_then_stop",
+      "task_id": "T1"
+    }
+  ],
+  "expect_verdict": "refute"
+}

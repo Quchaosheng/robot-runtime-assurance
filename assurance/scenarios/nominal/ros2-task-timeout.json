@@ -1,0 +1,40 @@
+{
+  "scenario_id": "nominal/ros2-task-timeout",
+  "title": "The same cancel/STOP invariant, but over a real ROS 2 action server and DDS.",
+  "seed": 301,
+  "transport": "ros2action",
+  "sut_args": [
+    "--work-ms",
+    "400"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 200,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "task_timeout",
+      "task_id": "T1"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I4I5-stop-acked-over-dds",
+      "kind": "cancel_then_stop",
+      "task_id": "T1",
+      "invariant": "I4"
+    },
+    {
+      "claim_id": "I8-no-false-success",
+      "kind": "no_false_success",
+      "task_id": "T1",
+      "invariant": "I8"
+    }
+  ],
+  "expect_verdict": "pass"
+}

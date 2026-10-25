@@ -1,0 +1,47 @@
+{
+  "scenario_id": "cancellation/stale-ack-does-not-pollute-next-task",
+  "title": "Task B must not be confirmed by task A's stale ACK.",
+  "seed": 74,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "30",
+    "--stale-epoch"
+  ],
+  "tasks": [
+    {
+      "task_id": "A",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 250,
+      "expect": "timeout"
+    },
+    {
+      "task_id": "B",
+      "epoch": 2,
+      "resource": "arm",
+      "deadline_ms": 400,
+      "expect": "done",
+      "start_after_ms": 300
+    }
+  ],
+  "faults": [
+    {
+      "kind": "stale_ack",
+      "task_id": "B"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I6-B-not-confirmed-by-A",
+      "kind": "ack_matches_task",
+      "task_id": "B"
+    },
+    {
+      "claim_id": "I8-no-false-success-A",
+      "kind": "no_false_success",
+      "task_id": "A"
+    }
+  ],
+  "expect_verdict": "refute"
+}

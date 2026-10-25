@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assurance/event.schema.json",
+  "title": "AssuranceEvent",
+  "description": "One line of the run timeline. Every verdict is derived from these and nothing else.",
+  "type": "object",
+  "required": ["t_ms", "kind"],
+  "additionalProperties": true,
+  "properties": {
+    "t_ms": {"type": "integer", "minimum": 0, "description": "Monotonic, run-relative."},
+    "kind": {
+      "enum": ["run_start", "run_end", "task_start", "ack", "rejected", "cancel_sent",
+               "cancelled", "timeout", "sut_killed", "sut_exit", "device_state",
+               "claim_granted", "claim_denied", "note"]
+    },
+    "task_id": {"type": "string"},
+    "epoch": {"type": "integer"},
+    "status": {"type": "string"},
+    "state": {"enum": ["idle", "busy", "safe_stop"]},
+    "requested": {"type": "boolean", "description": "true when the harness asked for it"},
+    "detail": {"type": "string"}
+  }
+}

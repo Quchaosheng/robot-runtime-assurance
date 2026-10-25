@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assurance/scenario.schema.json",
+  "title": "AssuranceScenario",
+  "type": "object",
+  "required": [
+    "scenario_id",
+    "seed",
+    "transport",
+    "tasks",
+    "claims"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "transport": {
+      "enum": [
+        "mock",
+        "ros2action"
+      ]
+    },
+    "sut_args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "epoch",
+          "resource",
+          "deadline_ms"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resource": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deadline_ms": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expect": {
+            "enum": [
+              "done",
+              "rejected",
+              "cancelled",
+              "timeout"
+            ]
+          },
+          "start_after_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "faults": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "task_id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "drop_ack",
+              "delay_ack",
+              "kill_sut",
+              "task_timeout",
+              "claim_conflict",
+              "stale_ack"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "delay_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "at_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "claim_id",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "registered_scenario",
+              "no_false_success",
+              "terminal_state",
+              "ack_matches_task",
+              "conflict_rejected",
+              "no_ack_after_exit",
+              "late_ack_recorded",
+              "cancel_then_stop",
+              "no_late_completion"
+            ]
+          },
+          "invariant": {
+            "enum": [
+              "I1",
+              "I2",
+              "I3",
+              "I4",
+              "I5",
+              "I6",
+              "I7",
+              "I8"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "scenario_ref": {
+            "type": "string"
+          },
+          "expect_state": {
+            "enum": [
+              "idle",
+              "safe_stop"
+            ]
+          },
+          "min_delay_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "expect_verdict": {
+      "enum": [
+        "pass",
+        "refute",
+        "insufficient"
+      ],
+      "description": "What a correctly working tool run on this sample looks like. Negative controls expect refute."
+    }
+  }
+}

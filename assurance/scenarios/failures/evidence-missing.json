@@ -1,0 +1,30 @@
+{
+  "scenario_id": "failures/evidence-missing",
+  "title": "A device that reports no state must yield insufficient_evidence, never a pass.",
+  "seed": 210,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "30",
+    "--silent"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 600,
+      "expect": "done"
+    }
+  ],
+  "faults": [],
+  "claims": [
+    {
+      "claim_id": "I8-terminal-state-unobservable",
+      "kind": "terminal_state",
+      "invariant": "I8",
+      "expect_state": "idle"
+    }
+  ],
+  "expect_verdict": "insufficient"
+}

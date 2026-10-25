@@ -1,0 +1,41 @@
+{
+  "scenario_id": "failures/ack-dropped",
+  "title": "The device works but its ACK never arrives: must time out, not pass.",
+  "seed": 416,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "30",
+    "--drop-ack"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 250,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "drop_ack",
+      "task_id": "T1"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I8-no-false-success",
+      "kind": "no_false_success",
+      "task_id": "T1",
+      "invariant": "I8"
+    },
+    {
+      "claim_id": "I7-ends-idle",
+      "kind": "terminal_state",
+      "expect_state": "idle",
+      "invariant": "I7"
+    }
+  ],
+  "expect_verdict": "pass"
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assurance/evidence.schema.json",
+  "title": "EvidenceBundleManifest",
+  "description": "manifest.json of a bundle. deterministic/ can be re-judged; observed/ cannot be replayed.",
+  "type": "object",
+  "required": [
+    "bundle_version",
+    "scenario_id",
+    "seed",
+    "transport",
+    "verdict_digest",
+    "passed",
+    "counts",
+    "sample_matched",
+    "unexercised"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "bundle_version": {
+      "const": "assurance-bundle/1"
+    },
+    "scenario_id": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "transport": {
+      "enum": [
+        "mock",
+        "ros2action"
+      ]
+    },
+    "verdict_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "expected_verdict": {
+      "enum": [
+        "pass",
+        "refute",
+        "insufficient"
+      ]
+    },
+    "observed_verdict": {
+      "enum": [
+        "pass",
+        "refute",
+        "insufficient"
+      ]
+    },
+    "blocked_by": {
+      "enum": [
+        null,
+        "transport_unavailable",
+        "fault_not_exercised",
+        "insufficient_evidence",
+        "claim_refuted"
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "confirmed",
+        "refuted",
+        "insufficient_evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "confirmed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refuted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "insufficient_evidence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "sample_matched": {
+      "type": "boolean"
+    },
+    "unexercised": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

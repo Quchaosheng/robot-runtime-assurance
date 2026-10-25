@@ -1,0 +1,37 @@
+{
+  "scenario_id": "failures/ack-late",
+  "title": "ACK arrives after the deadline: late is evidence, not a pass.",
+  "seed": 498,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "20",
+    "--delay-ack",
+    "900"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 200,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "delay_ack",
+      "task_id": "T1",
+      "delay_ms": 900
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I6-late-ack-recorded",
+      "kind": "late_ack_recorded",
+      "task_id": "T1",
+      "min_delay_ms": 400
+    }
+  ],
+  "expect_verdict": "pass"
+}

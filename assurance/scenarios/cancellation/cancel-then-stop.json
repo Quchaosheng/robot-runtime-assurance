@@ -1,0 +1,43 @@
+{
+  "scenario_id": "cancellation/cancel-then-stop",
+  "title": "Cancelling at the deadline must produce a STOP and a terminal state.",
+  "seed": 442,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "800"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 200,
+      "expect": "cancelled"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "task_timeout",
+      "task_id": "T1"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I4-stop-sent",
+      "kind": "cancel_then_stop",
+      "task_id": "T1"
+    },
+    {
+      "claim_id": "I5-stop-acked",
+      "kind": "terminal_state",
+      "expect_state": "idle"
+    },
+    {
+      "claim_id": "I8-evidence-complete",
+      "kind": "no_false_success",
+      "task_id": "T1"
+    }
+  ],
+  "expect_verdict": "pass"
+}

@@ -1,0 +1,43 @@
+{
+  "scenario_id": "nominal/normal-task",
+  "title": "A registered task runs to completion and the device reports idle.",
+  "seed": 549,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "30"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 800,
+      "expect": "done"
+    }
+  ],
+  "faults": [],
+  "claims": [
+    {
+      "claim_id": "I1-scenario-registered",
+      "kind": "registered_scenario",
+      "scenario_ref": "nominal/normal-task"
+    },
+    {
+      "claim_id": "I3-claim-granted",
+      "kind": "no_false_success",
+      "task_id": "T1"
+    },
+    {
+      "claim_id": "I6-ack-belongs-to-task",
+      "kind": "ack_matches_task",
+      "task_id": "T1"
+    },
+    {
+      "claim_id": "I7-ends-idle",
+      "kind": "terminal_state",
+      "expect_state": "idle"
+    }
+  ],
+  "expect_verdict": "pass"
+}

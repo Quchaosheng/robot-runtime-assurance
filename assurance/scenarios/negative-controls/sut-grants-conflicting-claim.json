@@ -1,0 +1,43 @@
+{
+  "scenario_id": "negative-controls/sut-grants-conflicting-claim",
+  "title": "NEGATIVE CONTROL: a SUT that grants the second claim must be refuted on I3.",
+  "seed": 505,
+  "transport": "mock",
+  "sut_args": [
+    "--work-ms",
+    "400",
+    "--claim-policy",
+    "grant-all"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 900,
+      "expect": "done"
+    },
+    {
+      "task_id": "T2",
+      "epoch": 2,
+      "resource": "arm",
+      "deadline_ms": 900,
+      "expect": "done",
+      "start_after_ms": 50
+    }
+  ],
+  "faults": [
+    {
+      "kind": "claim_conflict",
+      "task_id": "T2"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I3-conflict-rejected",
+      "kind": "conflict_rejected",
+      "task_id": "T2"
+    }
+  ],
+  "expect_verdict": "refute"
+}
