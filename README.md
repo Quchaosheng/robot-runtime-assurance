@@ -22,7 +22,7 @@ actually asks after a delivery:
 | After the device dropped off, did it reach the required terminal state? | `I7`, `terminal_state` |
 | On a resource conflict, was the second task *rejected*, not queued? | `I3`, `conflict_rejected` |
 | Is this pass, fail, or **not provable**? | three-state verdict, never a silent pass |
-| Can someone else re-check this acceptance? | `assure verify` + `assure replay` on the bundle |
+| Can someone else re-check this acceptance? | `python3 -m assurance.cli verify` + `python3 -m assurance.cli replay` on the bundle |
 
 ## The invariants (the actual product)
 
@@ -65,16 +65,16 @@ No ROS 2 required for the default path.
 git clone <this repo> && cd robot-runtime-assurance
 python3 -m pip install -e ".[dev]"
 
-assure doctor                      # what this machine can and cannot test
-assure list                        # 12 shipped scenarios
-assure run nominal/normal-task     # writes runs/nominal-normal-task--local
-assure report runs/nominal-normal-task--local
-assure verify runs/nominal-normal-task--local
-assure replay runs/nominal-normal-task--local
-assure junit  runs/nominal-normal-task--local --out junit.xml
+python3 -m assurance.cli doctor                      # what this machine can and cannot test
+python3 -m assurance.cli list                        # 12 shipped scenarios
+python3 -m assurance.cli run nominal/normal-task     # writes runs/nominal-normal-task--local
+python3 -m assurance.cli report runs/nominal-normal-task--local
+python3 -m assurance.cli verify runs/nominal-normal-task--local
+python3 -m assurance.cli replay runs/nominal-normal-task--local
+python3 -m assurance.cli junit  runs/nominal-normal-task--local --out junit.xml
 ```
 
-`assure run` exits non-zero when the run did not match the scenario's
+`python3 -m assurance.cli run` exits non-zero when the run did not match the scenario's
 `expect_verdict`, so it drops straight into CI.
 
 ## Scenarios that ship
@@ -91,6 +91,7 @@ assure junit  runs/nominal-normal-task--local --out junit.xml
 | `failures/task-timeout` | deadline exceeded → cancel → STOP ACK | pass |
 | `failures/resource-claim-conflict` | second claimant refused (I3) | pass |
 | `failures/evidence-missing` | device reports no state → must be unprovable (I8) | **insufficient** |
+| `nominal/ros2-task-timeout` | the same I4/I5 over a real ROS 2 action server + DDS | pass (ROS 2 only) |
 | `negative-controls/sut-grants-conflicting-claim` | broken SUT must be caught | **refute** |
 | `negative-controls/sut-ignores-cancel` | broken SUT must be caught | **refute** |
 
@@ -113,7 +114,7 @@ ptrace          unavailable
 
 So this tool does **not** claim to test the kernel CAN stack under packet loss. It
 tests that the *runtime and device protocol* stay safe when the conversation is
-hostile. `assure doctor` prints each backend's availability and reason; nothing is
+hostile. `python3 -m assurance.cli doctor` prints each backend's availability and reason; nothing is
 silently skipped.
 
 ## Transports
@@ -129,9 +130,13 @@ would already break the black-box boundary.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-assure doctor                                  # ros2action: available
-ROS_DOMAIN_ID=42 assure run failures/task-timeout --transport ros2action
+python3 -m assurance.cli doctor                       # ros2action: available
+python3 -m assurance.cli run nominal/ros2-task-timeout
 ```
+
+ROS 2 ships pytest plugins written for pytest 7; they crash pytest 9 at collection.
+Under ROS 2 use `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -p no:randomly`
+(what `ci/run-matrix.sh` does). Without ROS 2 the plain command works.
 
 ## Evidence bundle
 
@@ -144,7 +149,7 @@ runs/<scenario>--<id>/
   COMPLETE                                           <- written last, so half a bundle is never a run
 ```
 
-`assure verify` recomputes every checksum and re-derives the verdict from
+`python3 -m assurance.cli verify` recomputes every checksum and re-derives the verdict from
 `deterministic/`. Tampering with the timeline is detected (tested).
 
 ## Replay: three kinds, only one promised in v0.1
@@ -155,13 +160,15 @@ runs/<scenario>--<id>/
 | fixture replay | **implemented** | re-run the scenario against the deterministic mock SUT |
 | hardware replay | out of scope | physical robots are not bit-reproducible; not promised |
 
-`assure replay <bundle>` does fixture replay and compares the verdict digest.
+`python3 -m assurance.cli replay <bundle>` does fixture replay and compares the verdict digest.
 
 ## Status
 
-- 50 tests, all green. `python3 -m pytest`
-- 12 scenarios, 3 of which must fail or come back unprovable, every run.
+- **52 passed, 1 skipped** with ROS 2 available; **51 passed** without (the ROS 2 sample is
+  then recorded as `transport_unavailable`, never silently skipped). `python3 -m pytest`
+- **13 scenarios**: 3 must be refuted and 1 must come back unprovable, every run.
 - Zero runtime dependencies for the default path (`mock` transport, stdlib only).
+- Two-pass CI (`ci/run-matrix.sh`): without ROS 2, then with it. Both must pass.
 
 ### Not implemented yet, on purpose
 
