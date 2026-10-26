@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 
@@ -38,7 +37,7 @@ def run_cli(*args: str) -> tuple[dict, int]:
     env = {**os.environ, "PYTHONPATH": str(ROOT)}
     result = subprocess.run(
         [sys.executable, "-m", "assurance.cli", *args],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=600,
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=600, check=False,
     )
     payload = {}
     for chunk in result.stdout.strip().splitlines()[::-1]:
@@ -51,21 +50,28 @@ def run_cli(*args: str) -> tuple[dict, int]:
     return payload, result.returncode
 
 
-def bundle_of(scenario_id: str) -> pathlib.Path:
-    stamp = os.environ.get("ASSURANCE_RUN_ID") or "local"
-    return ROOT / "runs" / f"{scenario_id}--{stamp}"
+def run_into(tmp_path: pathlib.Path, scenario: str) -> tuple[dict, pathlib.Path]:
+    """Run one scenario into a directory this test owns.
+
+    Never into the repository's `runs/`: that directory is gitignored, so reading
+    it means a fresh clone fails and a developer's machine can pass on artifacts a
+    manual run left behind. That is exactly how this test was wrong the first time.
+    """
+    out = tmp_path / "runs"
+    result = subprocess.run(
+        [sys.executable, "-m", "assurance.cli", "run", scenario, "--out", str(out)],
+        cwd=ROOT, env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True, text=True, timeout=600, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout[result.stdout.index("{"):])
+    return payload, pathlib.Path(payload["bundle"])
 
 
 @needs_sut
 def test_the_normal_run_publishes_a_verifiable_bundle(tmp_path: pathlib.Path) -> None:
-    env = {**os.environ, "PYTHONPATH": str(ROOT), "ASSURANCE_RUN_ID": "test-normal"}
-    result = subprocess.run(
-        [sys.executable, "-m", "assurance.cli", "run", "workbench/normal-task"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=600,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-
-    timeline = json.loads((bundle_of("workbench-normal-task") / "deterministic/timeline.json").read_text())
+    _payload, bundle = run_into(tmp_path, "workbench/normal-task")
+    timeline = json.loads((bundle / "deterministic/timeline.json").read_text())
     verified = [e for e in timeline if e["kind"] == "bundle_verified"]
     assert verified, "the harness must hash the SUT's bundle itself"
     published = [e for e in timeline if e.get("detail") == "workbench run finished"]
@@ -75,19 +81,13 @@ def test_the_normal_run_publishes_a_verifiable_bundle(tmp_path: pathlib.Path) ->
 
 @needs_sut
 def test_a_killed_run_publishes_nothing_and_claims_nothing(tmp_path: pathlib.Path) -> None:
-    env = {**os.environ, "PYTHONPATH": str(ROOT), "ASSURANCE_RUN_ID": "test-killed"}
-    result = subprocess.run(
-        [sys.executable, "-m", "assurance.cli", "run", "workbench/runtime-killed"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=600,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-
-    timeline = json.loads((bundle_of("workbench-runtime-killed") / "deterministic/timeline.json").read_text())
+    _payload, bundle = run_into(tmp_path, "workbench/runtime-killed")
+    timeline = json.loads((bundle / "deterministic/timeline.json").read_text())
     deaths = [e for e in timeline if e["kind"] == "sut_killed"]
     assert deaths, "the kill must be recorded as an observation"
     assert not any(e["kind"] == "bundle_verified" for e in timeline), "a killed run must not publish a bundle"
 
-    verdict = json.loads((bundle_of("workbench-runtime-killed") / "deterministic/verdict.json").read_text())
+    verdict = json.loads((bundle / "deterministic/verdict.json").read_text())
     claim = verdict["claims"][0]
     assert claim["status"] == "confirmed"
     assert claim["reason"] == "kill_observed_and_no_ack_followed"

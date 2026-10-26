@@ -98,14 +98,16 @@ def test_an_unexpected_frame_is_recorded_not_dropped() -> None:
     assert "unexpected can frame" in timeline.events[-1]["detail"]
 
 
-def test_the_can_scenario_reports_insufficient_and_names_the_reason() -> None:
-    env = {**os.environ, "PYTHONPATH": str(ROOT), "ASSURANCE_RUN_ID": "can-host"}
+def test_the_can_scenario_reports_insufficient_and_names_the_reason(tmp_path: pathlib.Path) -> None:
+    out = tmp_path / "runs"
     result = subprocess.run(
-        [sys.executable, "-m", "assurance.cli", "run", "socketcan/device-not-on-this-host"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
+        [sys.executable, "-m", "assurance.cli", "run", "socketcan/device-not-on-this-host",
+         "--out", str(out)],
+        cwd=ROOT, env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True, text=True, timeout=300, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    bundle = ROOT / "runs" / "socketcan-device-not-on-this-host--can-host"
+    bundle = pathlib.Path(json.loads(result.stdout[result.stdout.index("{"):])["bundle"])
     verdict = json.loads((bundle / "deterministic/verdict.json").read_text())
     assert verdict["counts"]["insufficient_evidence"] == 1
     assert verdict["counts"]["confirmed"] == 0

@@ -25,28 +25,30 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def run(scenario: str, tag: str) -> tuple[dict, dict]:
-    env = {**os.environ, "PYTHONPATH": str(ROOT), "ASSURANCE_RUN_ID": tag}
+def run(scenario: str, tmp_path: pathlib.Path) -> tuple[dict, dict]:
+    """Run one scenario into a directory the test owns, never into the repo."""
+    out = tmp_path / "runs"
     result = subprocess.run(
-        [sys.executable, "-m", "assurance.cli", "run", scenario],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
+        [sys.executable, "-m", "assurance.cli", "run", scenario, "--out", str(out)],
+        cwd=ROOT, env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True, text=True, timeout=300, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    bundle = ROOT / "runs" / f"{scenario.replace('/', '-')}--{tag}"
+    bundle = pathlib.Path(json.loads(result.stdout[result.stdout.index("{"):])["bundle"])
     verdict = json.loads((bundle / "deterministic/verdict.json").read_text())
     return verdict, json.loads((bundle / "deterministic/timeline.json").read_text())
 
 
-def test_a_refusing_device_confirms_the_executor_boundary() -> None:
-    verdict, timeline = run("policy/raw-command-refused", "i2-ok")
+def test_a_refusing_device_confirms_the_executor_boundary(tmp_path: pathlib.Path) -> None:
+    verdict, timeline = run("policy/raw-command-refused", tmp_path)
     claim = verdict["claims"][0]
     assert claim["status"] == "confirmed"
     assert claim["reason"] == "device_refused_every_raw_command"
     assert any(e["kind"] == "raw_command" and not e["accepted"] for e in timeline)
 
 
-def test_a_device_that_obeys_a_raw_command_is_refuted() -> None:
-    verdict, timeline = run("negative-controls/sut-accepts-raw-command", "i2-bad")
+def test_a_device_that_obeys_a_raw_command_is_refuted(tmp_path: pathlib.Path) -> None:
+    verdict, timeline = run("negative-controls/sut-accepts-raw-command", tmp_path)
     claim = verdict["claims"][0]
     assert claim["status"] == "refuted"
     assert claim["reason"] == "device_obeyed_a_raw_command"
