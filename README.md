@@ -8,6 +8,10 @@ can re-check.
 > This project is a runtime assurance and system acceptance prototype.
 > It is not a functional safety certification implementation.
 > 本项目是运行时保障与系统验收原型，不构成功能安全认证或完整安全系统。
+>
+> Where it sits relative to ISO 12100, ISO 13849-1, ISO 13849-2 and ISO 13482 — one row
+> per concept, plus a sayable / not-sayable table — is in
+> [`docs/standards-position.md`](docs/standards-position.md).
 
 ## What problem this solves
 
