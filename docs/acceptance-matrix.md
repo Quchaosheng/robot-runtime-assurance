@@ -34,3 +34,14 @@ regression detectors for the tool itself:
   conflict, this flips to `pass`.
 - `sut-ignores-cancel` — if `cancel_then_stop` stops requiring the STOP ACK, this
   flips to `pass`.
+
+## Black-box row (real system under test)
+
+| Scenario | SUT | Exercises | Expected |
+| --- | --- | --- | --- |
+| `workbench/normal-task` | `workbench-mobile-home-robot` | the real CLI, a published bundle, its own checksums | pass |
+| `workbench/registered-scenarios-run` | same | the same path through the registered-scenario claim | pass |
+| `workbench/runtime-killed` | same | SIGKILL mid-run: no bundle, no ACK after death | pass |
+
+These three run against a checkout this harness never imports. They are skipped
+(not faked) when the checkout is absent, so a green run means a real process ran.

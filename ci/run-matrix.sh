@@ -11,6 +11,11 @@ python3 -m assurance.cli doctor
 python3 -m pytest -q -p no:cacheprovider
 
 echo
+echo "== pass 1b: black-box path (skipped, not faked, without a workbench checkout) =="
+python3 -m assurance.cli run workbench/normal-task
+python3 -m assurance.cli run workbench/runtime-killed
+
+echo
 echo "== pass 2: with ROS 2 =="
 # shellcheck disable=SC1091
 set +u

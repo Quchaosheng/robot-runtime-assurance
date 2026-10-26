@@ -35,6 +35,10 @@ def cmd_doctor(_args) -> int:
     for transport in (MockTransport(), Ros2ActionTransport()):
         ok, why = transport.available()
         rows.append((transport.name, ok, why))
+    from .sut.workbench import WorkbenchTransport
+    workbench = WorkbenchTransport()
+    ok, why = workbench.available()
+    rows.append((workbench.name, ok, why))
     ros2 = shutil.which("ros2")
     rows.append(("ros2_cli", bool(ros2), ros2 or "not on PATH"))
     vcan = pathlib.Path("/sys/class/net/vcan0").exists()

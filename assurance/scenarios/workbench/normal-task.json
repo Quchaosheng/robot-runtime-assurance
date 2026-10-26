@@ -1,0 +1,30 @@
+{
+  "scenario_id": "workbench/normal-task",
+  "title": "The real workbench runtime runs a registered scenario to a confirmed terminal state.",
+  "seed": 1001,
+  "transport": "workbench",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "sut_scenario": "normal-001",
+      "runner": "scripted",
+      "epoch": 1,
+      "resource": "robot",
+      "deadline_ms": 120000,
+      "expect": "done"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I1-bundle-published",
+      "kind": "bundle_published",
+      "scenario_ref": "normal-001"
+    },
+    {
+      "claim_id": "I6-ack-carries-task-epoch",
+      "kind": "ack_matches_task",
+      "task_id": "T1"
+    }
+  ],
+  "expect_verdict": "pass"
+}

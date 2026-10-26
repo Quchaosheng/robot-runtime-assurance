@@ -57,7 +57,9 @@ def run_scenario(scenario: dict, out_dir: str | pathlib.Path) -> dict:
         timeline.add("run_end", outcome="transport_unavailable", detail=str(exc))
         return _finish(scenario, timeline, out_dir, transport_started=False)
 
-    if scenario["transport"] == "ros2action":
+    if scenario["transport"] == "workbench":
+        _run_workbench(scenario, transport, timeline, faults)
+    elif scenario["transport"] == "ros2action":
         _run_ros2(scenario, transport, timeline, faults)
     else:
         _run_session(scenario, transport, timeline, faults)
@@ -65,6 +67,123 @@ def run_scenario(scenario: dict, out_dir: str | pathlib.Path) -> dict:
     transport.stop(timeline)
     timeline.add("run_end", outcome="completed")
     return _finish(scenario, timeline, out_dir, transport_started=True)
+
+
+def _run_workbench(scenario: dict, transport, timeline: Timeline, faults: list[dict]) -> None:
+    """Run the SUT's own CLI once per task and read the bundle it publishes.
+
+    This is the black-box path: the only thing sent is the SUT's published command
+    line, the only thing read is the evidence bundle it wrote. A kill fault kills
+    that process on purpose; a timeout fault truncates our own wait. Either way the
+    SUT's account of what happened is recorded as a claim, not as proof.
+    """
+    import pathlib
+    import tempfile
+
+    kill = _fault_any(faults, "kill_sut")
+    for task in scenario["tasks"]:
+        output_dir = pathlib.Path(tempfile.mkdtemp(prefix="assurance-workbench-"))
+        timeline.add("note", detail="workbench run requested", scenario_id=task.get("sut_scenario"),
+                     output_dir=str(output_dir))
+        try:
+            if kill is not None:
+                result = _run_workbench_killed(transport, task, output_dir,
+                                               at_ms=kill.get("at_ms", 500))
+            else:
+                result = transport.run_task(task["sut_scenario"], output_dir,
+                                            runner=task.get("runner", "scripted"),
+                                            timeout_s=int(task["deadline_ms"] / 1000) + 30)
+        except TransportError as exc:
+            timeline.add("note", detail=f"workbench run failed: {exc}")
+            continue
+        verified, detail = _verify_bundle(result.get("bundle"))
+        timeline.add("note", detail="workbench run finished", exit_code=result["exit_code"],
+                     bundle=result.get("bundle"), bundle_verified=verified,
+                     sut_scenario=task.get("sut_scenario"),
+                     checksum_detail=detail, stdout=result["stdout_tail"])
+        if verified:
+            timeline.add("bundle_verified", bundle=result.get("bundle"),
+                         files="checksums.sha256", detail=detail)
+        if kill is not None:
+            # Not `requested`: the kill is the harness's own observation of the
+            # process dying, which is exactly what I7 is about.
+            timeline.add("sut_killed", code=result["exit_code"],
+                         reason="assurance killed the SUT mid-run")
+            leftover = _leftovers(output_dir)
+            timeline.add("note", detail="post-kill leftovers", partial=leftover["partial"],
+                         published=leftover["published"], output_dir=str(output_dir))
+        if result.get("bundle"):
+            transport.ingest_bundle(timeline, pathlib.Path(result["bundle"]),
+                                    task_id=task["task_id"], requested_exit=kill is None)
+
+
+def _leftovers(output_dir) -> dict:
+    """What a killed run left behind. A published bundle after a kill is a bug."""
+    import pathlib
+
+    root = pathlib.Path(output_dir)
+    return {
+        "partial": sorted(str(p.name) for p in root.glob(".*.partial")),
+        "published": sorted(str(p.name) for p in root.iterdir()
+                            if p.is_dir() and not p.name.startswith(".")),
+    }
+
+
+def _verify_bundle(bundle: str | None) -> tuple[bool | None, str]:
+    """Hash the SUT's bundle ourselves before reading it.
+
+    A published bundle that does not match its own `checksums.sha256` is not
+    evidence of anything, so the mismatch is recorded as a refutation rather than
+    silently ingested.
+    """
+    import hashlib
+    import pathlib
+
+    if not bundle:
+        return None, "no bundle published"
+    root = pathlib.Path(bundle)
+    sums = root / "checksums.sha256"
+    if not sums.is_file():
+        return None, "bundle has no checksums.sha256"
+    for line in sums.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        expected, name = parts
+        target = root / name
+        if not target.is_file():
+            return False, f"{name} is listed but missing"
+        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        if actual != expected:
+            return False, f"{name} hashes to {actual[:12]}, bundle says {expected[:12]}"
+    return True, "all files match checksums.sha256"
+
+
+def _run_workbench_killed(transport, task: dict, output_dir, *, at_ms: int) -> dict:
+    """Start the SUT, kill it mid-run, and report what it left behind."""
+    import subprocess
+    import sys
+    import time
+
+    env = {**__import__("os").environ}
+    cli = transport.root / "tools/scripts/sim_cli.py"
+    command = [sys.executable, str(cli), "run", task["sut_scenario"], "--runner",
+               task.get("runner", "scripted"), "--output-dir", str(output_dir), "--json"]
+    from .sut.workbench import _shim
+    env["PYTHONPATH"] = _shim()
+    proc = subprocess.Popen(command, cwd=str(transport.root), env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(max(at_ms, 0) / 1000.0)
+    proc.kill()
+    out, err = proc.communicate()
+    return {"argv": command, "exit_code": proc.returncode,
+            "stdout_tail": out.strip().splitlines()[-1:] or [""],
+            "stderr_tail": err.strip().splitlines()[-3:],
+            "summary": {}, "bundle": None, "metadata": None}
+
+
+def _fault_any(faults: list[dict], kind: str) -> dict | None:
+    return next((fault for fault in faults if fault["kind"] == kind), None)
 
 
 def _run_ros2(scenario: dict, transport, timeline: Timeline, faults: list[dict]) -> None:

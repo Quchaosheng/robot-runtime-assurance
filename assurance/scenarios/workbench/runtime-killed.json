@@ -1,0 +1,31 @@
+{
+  "scenario_id": "workbench/runtime-killed",
+  "title": "The real workbench run is SIGKILLed mid-run; no bundle may be published and nothing may claim completion.",
+  "seed": 1002,
+  "transport": "workbench",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "sut_scenario": "normal-001",
+      "runner": "scripted",
+      "epoch": 1,
+      "resource": "robot",
+      "deadline_ms": 120000,
+      "expect": "timeout"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "kill_sut",
+      "task_id": "T1",
+      "at_ms": 120
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I7-kill-observed-no-ack-or-bundle",
+      "kind": "kill_observed"
+    }
+  ],
+  "expect_verdict": "pass"
+}

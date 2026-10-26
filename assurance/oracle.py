@@ -23,7 +23,13 @@ def _independent_observations(timeline: list[dict]) -> list[str]:
     """Evidence that does not come from the same channel as the ACK."""
     # An exit the harness asked for proves nothing about the SUT; a kill or a crash does.
     kinds = {e["kind"] for e in timeline if not e.get("requested")}
-    return [k for k in ("device_state", "sut_exit", "sut_killed") if k in kinds]
+    independent = [k for k in ("device_state", "sut_exit", "sut_killed") if k in kinds]
+    # A bundle this harness hashed itself is an observation of the *artifact*, not a
+    # report from the subject. It can confirm a provenance claim; it can never
+    # confirm that the robot did anything.
+    if any(e["kind"] == "bundle_verified" for e in timeline):
+        independent.append("bundle_verified")
+    return independent
 
 
 def _verdict(status: str, reason: str, **extra) -> dict:
@@ -179,6 +185,61 @@ def _late_ack_recorded(claim: dict, timeline: list[dict]) -> dict:
     return _verdict(CONFIRMED, "late_ack_recorded_after_deadline", gap_ms=gap, task_id=tid)
 
 
+def _bundle_published(claim: dict, timeline: list[dict]) -> dict:
+    """I1 for a black-box SUT: the run must publish a verifiable bundle, and the
+    scenario it actually ran must be the one that was asked for.
+
+    This is the harness's own observation - it hashed the bundle's files itself -
+    so it is *not* capped by the independent-observation rule the way an ACK is.
+    It still cannot prove the robot moved; it proves which scenario ran and that
+    the artifact was not rewritten after the fact.
+    """
+    ref = claim.get("scenario_ref")
+    published = [e for e in timeline if e["kind"] == "note" and "bundle" in e]
+    if not published:
+        return _verdict(INSUFFICIENT, "no_bundle_published", missing=["published_bundle"])
+    observed = next((e.get("sut_scenario") for e in published if e.get("sut_scenario")), None)
+    if ref is not None and observed != ref:
+        return _verdict(REFUTED, "ran_a_different_scenario", expected=ref, observed=observed)
+    unverified = [e for e in published if e.get("bundle_verified") is False]
+    if unverified:
+        return _verdict(REFUTED, "bundle_checksum_mismatch",
+                        detail=unverified[0].get("detail"))
+    return _verdict(CONFIRMED, "bundle_published_and_checksum_verified",
+                    observed=observed, bundles=len(published))
+
+
+def _kill_observed(claim: dict, timeline: list[dict]) -> dict:
+    """I7 for a killed SUT: the kill must be visible, and nothing may ACK after it.
+
+    A kill this harness performed is an independent observation of the *process*,
+    which is exactly what the claim is about. It says nothing about the device.
+    """
+    deaths = [e for e in timeline if e["kind"] in ("sut_exit", "sut_killed")]
+    if not deaths:
+        return _verdict(INSUFFICIENT, "no_death_observed", missing=["sut_killed|sut_exit"])
+    death = deaths[0]
+    after = [e for e in timeline
+             if e["kind"] == "ack" and not e.get("requested") and e["t_ms"] > death["t_ms"]]
+    if after:
+        return _verdict(REFUTED, "ack_after_process_exit",
+                        count=len(after), t_ms=after[0]["t_ms"])
+    # A killed run that still managed to publish a bundle was not killed early enough
+    # to prove anything, so it cannot be counted as a pass.
+    leftovers = [e for e in timeline
+                 if e["kind"] == "note" and e.get("detail") == "post-kill leftovers"]
+    if leftovers and leftovers[0].get("published"):
+        return _verdict(REFUTED, "bundle_published_after_kill",
+                        bundles=leftovers[0]["published"])
+    # A `.partial` directory is the honest residue of a killed run: the SUT never
+    # claimed it published anything. It is recorded as a finding, not a failure,
+    # because the missing artifact is the correct outcome - but a reviewer has to be
+    # told it is there, or "no bundle" and "no trace at all" look identical.
+    partial = leftovers[0].get("partial") if leftovers else []
+    return _verdict(CONFIRMED, "kill_observed_and_no_ack_followed",
+                    code=death.get("code"), t_ms=death["t_ms"], partial_leftovers=partial)
+
+
 RULES = {
     "no_false_success": _no_false_success,
     "terminal_state": _terminal_state,
@@ -189,6 +250,8 @@ RULES = {
     "registered_scenario": _registered_scenario,
     "cancel_then_stop": _cancel_then_stop,
     "no_late_completion": _no_late_completion,
+    "bundle_published": _bundle_published,
+    "kill_observed": _kill_observed,
 }
 
 

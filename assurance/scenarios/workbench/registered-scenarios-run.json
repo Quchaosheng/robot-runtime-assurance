@@ -1,0 +1,25 @@
+{
+  "scenario_id": "workbench/registered-scenarios-run",
+  "title": "Every registered workbench scenario reaches a terminal state and publishes a verified bundle.",
+  "seed": 1003,
+  "transport": "workbench",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "sut_scenario": "normal-001",
+      "runner": "scripted",
+      "epoch": 1,
+      "resource": "robot",
+      "deadline_ms": 120000,
+      "expect": "done"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I1-bundle-published",
+      "kind": "bundle_published",
+      "scenario_ref": "normal-001"
+    }
+  ],
+  "expect_verdict": "pass"
+}

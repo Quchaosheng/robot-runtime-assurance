@@ -282,4 +282,7 @@ class Ros2ActionTransport:
 def make_transport(scenario: dict):
     if scenario["transport"] == "mock":
         return MockTransport(scenario.get("sut_args", []))
+    if scenario["transport"] == "workbench":
+        from .sut.workbench import WorkbenchTransport
+        return WorkbenchTransport(scenario.get("sut_args", []))
     return Ros2ActionTransport(sut_args=scenario.get("sut_args", []))

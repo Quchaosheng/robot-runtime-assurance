@@ -25,7 +25,8 @@
     "transport": {
       "enum": [
         "mock",
-        "ros2action"
+        "ros2action",
+        "workbench"
       ]
     },
     "sut_args": {
@@ -74,6 +75,19 @@
           "start_after_ms": {
             "type": "integer",
             "minimum": 0
+          },
+          "sut_scenario": {
+            "type": "string",
+            "minLength": 1,
+            "description": "registered id in the SUT's own registry, e.g. normal-001"
+          },
+          "runner": {
+            "type": "string",
+            "enum": [
+              "scripted",
+              "external",
+              "gazebo"
+            ]
           }
         }
       }
@@ -137,7 +151,9 @@
               "no_ack_after_exit",
               "late_ack_recorded",
               "cancel_then_stop",
-              "no_late_completion"
+              "no_late_completion",
+              "bundle_published",
+              "kill_observed"
             ]
           },
           "invariant": {

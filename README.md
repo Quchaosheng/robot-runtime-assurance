@@ -66,7 +66,7 @@ git clone <this repo> && cd robot-runtime-assurance
 python3 -m pip install -e ".[dev]"
 
 python3 -m assurance.cli doctor                      # what this machine can and cannot test
-python3 -m assurance.cli list                        # 12 shipped scenarios
+python3 -m assurance.cli list                        # 16 shipped scenarios
 python3 -m assurance.cli run nominal/normal-task     # writes runs/nominal-normal-task--local
 python3 -m assurance.cli report runs/nominal-normal-task--local
 python3 -m assurance.cli verify runs/nominal-normal-task--local
@@ -76,6 +76,52 @@ python3 -m assurance.cli junit  runs/nominal-normal-task--local --out junit.xml
 
 `python3 -m assurance.cli run` exits non-zero when the run did not match the scenario's
 `expect_verdict`, so it drops straight into CI.
+
+## The black-box target: workbench-mobile-home-robot
+
+The harness ships a `workbench` transport that drives a **real** system under test
+through its published CLI and reads the evidence bundle it writes. It is the first
+target this project did not build itself, which is the only way the black-box claim
+means anything.
+
+```bash
+python3 -m assurance.cli doctor                      # workbench   available   <path>/sim_cli.py
+python3 -m assurance.cli run workbench/normal-task
+python3 -m assurance.cli run workbench/runtime-killed
+```
+
+Three rules keep it black-box:
+
+| Rule | Why |
+| --- | --- |
+| the SUT's package is never put on `sys.path` | a verdict cannot rest on shared code |
+| the SUT's own `device_state` / `task_terminal` are recorded as **subject claims** and are never independent observations | otherwise the subject confirms itself |
+| the harness hashes the SUT's `checksums.sha256` itself, before reading the bundle | a bundle that does not match is a refutation, not evidence |
+
+Two claim kinds exist only for this path:
+
+- `bundle_published` — the run must publish a bundle whose files match its own
+  checksums, and the scenario it ran must be the one that was requested. This is
+  the harness's observation of an artifact, so it can confirm a provenance claim;
+  it can never confirm that a robot moved.
+- `kill_observed` — the kill must be visible and nothing may ACK after it. A kill
+  the harness performed is an independent observation of the *process*, which is
+  exactly what the claim is about.
+
+### What this already found
+
+Running the real SUT was not a formality. Two behaviours only showed up when the
+process was driven from outside:
+
+| Finding | Evidence |
+| --- | --- |
+| A SIGKILLed run publishes **no artifacts at all** (exit `-9`), so "no bundle" is the correct outcome and was previously indistinguishable from "the harness never looked" | `workbench/runtime-killed` |
+| A `.partial` staging directory is the only residue of a killed run, and it is left on disk | recorded as `partial_leftovers` in the verdict |
+| The SUT's per-event `sequence_no` is **not** a task epoch; mapping it as one made every ACK look stale | fixed in `assurance/sut/workbench.py` |
+
+Given a kill that lands after the bundle is published, the oracle returns
+`refuted: bundle_published_after_kill`. That rule is tested directly rather than
+only exercised by the happy path.
 
 ## Scenarios that ship
 
@@ -166,7 +212,7 @@ runs/<scenario>--<id>/
 
 - **52 passed, 1 skipped** with ROS 2 available; **51 passed** without (the ROS 2 sample is
   then recorded as `transport_unavailable`, never silently skipped). `python3 -m pytest`
-- **13 scenarios**: 3 must be refuted and 1 must come back unprovable, every run.
+- **16 scenarios**: 3 must be refuted and 1 must come back unprovable, every run.
 - Zero runtime dependencies for the default path (`mock` transport, stdlib only).
 - Two-pass CI (`ci/run-matrix.sh`): without ROS 2, then with it. Both must pass.
 
