@@ -258,3 +258,7 @@ assurance/
 docs/             architecture.md, invariants.md, acceptance-matrix.md
 tests/            oracle, scenarios end-to-end, registry + CLI
 ```
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

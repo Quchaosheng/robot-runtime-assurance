@@ -7,6 +7,8 @@ name = "robot-runtime-assurance"
 version = "0.1.0"
 description = "Black-box acceptance, fault injection and evidence for embodied robot systems"
 requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Chaosheng Qu"}]
 dependencies = []
 
 [project.optional-dependencies]
