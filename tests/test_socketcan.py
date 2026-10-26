@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import socket
 import struct
 import subprocess
 import sys
@@ -27,7 +26,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 from assurance.sut.socketcan import (
     CAN_ID_ACK,
     CAN_ID_COMMAND,
-    CAN_ID_STOP,
     CAN_ID_STOP_ACK,
     RESULT_OK,
     RESULT_REJECTED,

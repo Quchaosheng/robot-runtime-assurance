@@ -20,6 +20,10 @@ python3 -m assurance.cli run trace/latency-evidence-verified
 python3 -m assurance.cli run socketcan/device-not-on-this-host
 
 echo
+echo "== pass 1c: every shipped scenario matches its declared verdict =="
+python3 ci/check_scenarios.py
+
+echo
 echo "== pass 2: with ROS 2 =="
 # shellcheck disable=SC1091
 set +u
