@@ -6,7 +6,7 @@ rejected at review time; a scenario with no claims is rejected by the registry.
 | ID | Invariant | Claim kind | How it is proven | What refutes it |
 | --- | --- | --- | --- | --- |
 | I1 | An unregistered scenario cannot be executed | `registered_scenario`, `bundle_published` | `registry.load()` refuses anything not on disk; the run records which scenario actually ran | the run's `scenario_id` differs from the claim's `scenario_ref` |
-| I2 | A policy proposal cannot bypass the executor | *(structural)* | the harness exposes only `start`/`cancel`/`stop`; there is no code path to a device | the SUT grants a claim it should refuse (see `negative-controls/`) |
+| I2 | A policy proposal cannot bypass the executor | `raw_command_refused` | one raw actuator command is sent; the device must refuse it | the device obeys it (`device_obeyed_a_raw_command`) |
 | I3 | On a resource claim conflict, the later task is rejected | `conflict_rejected` | a task asks for a resource still held | the claim is granted, or no decision is recorded |
 | I4 | Cancelling escalates to a STOP | `cancel_then_stop` | `cancel_sent` is followed by `stop_sent` | `cancel_without_stop` |
 | I5 | A STOP is ACKed and a terminal state is reported | `cancel_then_stop`, `terminal_state` | `stop_ack` after `stop_sent`, then a non-`busy` state | `stop_never_acknowledged`, `stop_ack_predates_the_stop`, `device_still_busy_after_stop_ack` |
@@ -44,3 +44,22 @@ outcome.
 A subject's `device_state` and `task_terminal` are ingested as `subject_claim: true`
 and `requested: true`, which keeps them out of the independent-observation set. A
 test (`test_a_subject_self_report_is_never_an_independent_observation`) fixes that.
+
+## I2 is now falsifiable
+
+I2 began as a structural statement: this harness has no code path into a device, so
+"the model bypassed the executor" could not fail here. That is true but unfalsifiable,
+so it proves nothing about a *subject*.
+
+The claim `raw_command_refused` fixes that. A scenario declares `raw_probes`, the
+runner sends them, and the device's answer decides:
+
+| Outcome | Verdict | Why |
+| --- | --- | --- |
+| every probe refused | `confirmed` | the executor boundary exists |
+| any probe obeyed | `refuted` | there is no boundary to bypass |
+| no probe was sent | `insufficient_evidence` | silence is not compliance |
+| probe sent, no answer recorded | `insufficient_evidence` | the device demonstrated nothing |
+
+`negative-controls/sut-accepts-raw-command` exists so this rule is exercised by a
+device that actually misbehaves, not only by one that behaves.

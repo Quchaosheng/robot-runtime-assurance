@@ -14,6 +14,10 @@ echo
 echo "== pass 1b: black-box path (skipped, not faked, without a workbench checkout) =="
 python3 -m assurance.cli run workbench/normal-task
 python3 -m assurance.cli run workbench/runtime-killed
+python3 -m assurance.cli run policy/raw-command-refused
+python3 -m assurance.cli run negative-controls/sut-accepts-raw-command
+python3 -m assurance.cli run trace/latency-evidence-verified
+python3 -m assurance.cli run socketcan/device-not-on-this-host
 
 echo
 echo "== pass 2: with ROS 2 =="

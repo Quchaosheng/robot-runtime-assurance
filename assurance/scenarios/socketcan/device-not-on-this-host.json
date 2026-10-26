@@ -1,0 +1,23 @@
+{
+  "scenario_id": "socketcan/device-not-on-this-host",
+  "title": "A CAN scenario on a host without a vcan interface must be insufficient, never a pass.",
+  "seed": 4001,
+  "transport": "socketcan",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "can0",
+      "deadline_ms": 500,
+      "expect": "rejected"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I7-can-reaches-safe-state",
+      "kind": "terminal_state",
+      "expect_state": "safe_stop"
+    }
+  ],
+  "expect_verdict": "insufficient"
+}

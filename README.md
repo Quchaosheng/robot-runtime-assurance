@@ -39,11 +39,16 @@ I7  Device disconnect, process death, or timeout must reach the required termina
 I8  With incomplete evidence the verdict must be insufficient, never pass.
 ```
 
-I2 is enforced **structurally** rather than by a claim: the harness only knows
-`start` / `cancel` / `stop` and an action name. There is no code path from this repo
-into a device, so "the model bypassed the executor" is not a test this tool can fail -
-it is a boundary this tool cannot cross. Scenarios that need it use the SUT's
-`claim_policy` to prove the *executor* refuses, which is the observable half of I2.
+I2 is proved from **both sides**, and it used to be only a structural claim. The
+harness still has no code path into a device, but a scenario may now send one raw
+actuator command and the SUT's answer is judged:
+
+- a device that refuses it (`policy/raw-command-refused`) confirms the executor
+  boundary exists;
+- a device that obeys it (`negative-controls/sut-accepts-raw-command`) is refuted,
+  which is what makes the invariant falsifiable;
+- a run that never sent the probe, or a device that stayed silent, is
+  `insufficient_evidence`. Silence is not compliance.
 
 ## Verdicts are three-valued, and that is the point
 
@@ -66,7 +71,7 @@ git clone <this repo> && cd robot-runtime-assurance
 python3 -m pip install -e ".[dev]"
 
 python3 -m assurance.cli doctor                      # what this machine can and cannot test
-python3 -m assurance.cli list                        # 16 shipped scenarios
+python3 -m assurance.cli list                        # 20 shipped scenarios
 python3 -m assurance.cli run nominal/normal-task     # writes runs/nominal-normal-task--local
 python3 -m assurance.cli report runs/nominal-normal-task--local
 python3 -m assurance.cli verify runs/nominal-normal-task--local
@@ -140,6 +145,13 @@ only exercised by the happy path.
 | `nominal/ros2-task-timeout` | the same I4/I5 over a real ROS 2 action server + DDS | pass (ROS 2 only) |
 | `negative-controls/sut-grants-conflicting-claim` | broken SUT must be caught | **refute** |
 | `negative-controls/sut-ignores-cancel` | broken SUT must be caught | **refute** |
+| `negative-controls/sut-accepts-raw-command` | a SUT with no executor boundary must be caught (I2) | **refute** |
+| `policy/raw-command-refused` | the executor refuses a direct actuator command (I2) | pass |
+| `trace/latency-evidence-verified` | a latency summary with no local artifact is unprovable | **insufficient** |
+| `socketcan/device-not-on-this-host` | no vcan interface: honest insufficient, never a pass | **insufficient** |
+| `workbench/normal-task` | the real workbench runtime, bundle + checksums (I1, I6) | pass |
+| `workbench/registered-scenarios-run` | the same path through the registered-scenario claim | pass |
+| `workbench/runtime-killed` | SIGKILL mid-run: no bundle, no ACK after death (I7) | pass |
 
 `expect_verdict` is part of the scenario. A negative control that stops being refuted
 fails CI — that is how the tool proves it can still detect a regression in itself.
@@ -212,7 +224,7 @@ runs/<scenario>--<id>/
 
 - **52 passed, 1 skipped** with ROS 2 available; **51 passed** without (the ROS 2 sample is
   then recorded as `transport_unavailable`, never silently skipped). `python3 -m pytest`
-- **16 scenarios**: 3 must be refuted and 1 must come back unprovable, every run.
+- **20 scenarios**: 4 must be refuted and 2 must come back unprovable, every run.
 - Zero runtime dependencies for the default path (`mock` transport, stdlib only).
 - Two-pass CI (`ci/run-matrix.sh`): without ROS 2, then with it. Both must pass.
 

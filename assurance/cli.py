@@ -35,6 +35,10 @@ def cmd_doctor(_args) -> int:
     for transport in (MockTransport(), Ros2ActionTransport()):
         ok, why = transport.available()
         rows.append((transport.name, ok, why))
+    from .sut.socketcan import SocketCanTransport
+    can = SocketCanTransport()
+    ok, why = can.available()
+    rows.append((can.name, ok, why))
     from .sut.workbench import WorkbenchTransport
     workbench = WorkbenchTransport()
     ok, why = workbench.available()

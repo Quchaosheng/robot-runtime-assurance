@@ -1,0 +1,25 @@
+{
+  "scenario_id": "trace/latency-evidence-verified",
+  "title": "RoboTraceOpt's published latency summary is admitted only if its digests re-derive.",
+  "seed": 2001,
+  "transport": "traceartifact",
+  "trace_artifact": {
+    "summary": "/data/builds/caogao/research/RoboTraceOpt/tests/fixtures/association/w1_real_summary.json"
+  },
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "trace",
+      "deadline_ms": 5000
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I9-trace-digests",
+      "kind": "trace_artifact_verified",
+      "min_accepted_count": 1
+    }
+  ],
+  "expect_verdict": "insufficient"
+}

@@ -26,7 +26,9 @@
       "enum": [
         "mock",
         "ros2action",
-        "workbench"
+        "workbench",
+        "traceartifact",
+        "socketcan"
       ]
     },
     "sut_args": {
@@ -153,7 +155,9 @@
               "cancel_then_stop",
               "no_late_completion",
               "bundle_published",
-              "kill_observed"
+              "kill_observed",
+              "trace_artifact_verified",
+              "raw_command_refused"
             ]
           },
           "invariant": {
@@ -183,6 +187,10 @@
           "min_delay_ms": {
             "type": "integer",
             "minimum": 0
+          },
+          "min_accepted_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
@@ -194,6 +202,57 @@
         "insufficient"
       ],
       "description": "What a correctly working tool run on this sample looks like. Negative controls expect refute."
+    },
+    "trace_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digests": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "committed_fixture": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "summary"
+      ]
+    },
+    "raw_probes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "joint",
+          "value"
+        ],
+        "properties": {
+          "joint": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        }
+      }
     }
   }
 }

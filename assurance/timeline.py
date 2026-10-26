@@ -11,7 +11,7 @@ import time
 KINDS = {
     "run_start", "task_start", "ack", "rejected", "cancel_sent", "cancelled",
     "timeout", "sut_exit", "sut_killed", "device_state", "claim_granted",
-    "claim_denied", "run_end", "note", "stop_sent", "stop_ack", "task_accepted", "bundle_verified",
+    "claim_denied", "run_end", "note", "stop_sent", "stop_ack", "task_accepted", "bundle_verified", "trace_verified", "raw_command",
 }
 
 

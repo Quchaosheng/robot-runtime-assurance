@@ -29,6 +29,11 @@ def _independent_observations(timeline: list[dict]) -> list[str]:
     # confirm that the robot did anything.
     if any(e["kind"] == "bundle_verified" for e in timeline):
         independent.append("bundle_verified")
+    # Same reasoning for a latency artifact: the harness re-derived the digests.
+    if any(e["kind"] == "trace_verified"
+           and any(d["status"] == "match" for d in e.get("digests", []))
+           for e in timeline):
+        independent.append("trace_verified")
     return independent
 
 
@@ -240,6 +245,61 @@ def _kill_observed(claim: dict, timeline: list[dict]) -> dict:
                     code=death.get("code"), t_ms=death["t_ms"], partial_leftovers=partial)
 
 
+def _trace_artifact_verified(claim: dict, timeline: list[dict]) -> dict:
+    """I9: a latency artifact is evidence only if its declared digests re-derive.
+
+    The harness computed every digest in the timeline itself, so this is an
+    observation of an artifact rather than a report from the subject. It can never
+    confirm that a task succeeded - only that the timing evidence is intact and
+    internally consistent.
+    """
+    verified = [e for e in timeline if e["kind"] == "trace_verified"]
+    if not verified:
+        return _verdict(INSUFFICIENT, "no_trace_artifact", missing=["trace_verified"])
+    seen = verified[0]
+    mismatches = [d for d in seen.get("digests", []) if d["status"] == "mismatch"]
+    if mismatches:
+        return _verdict(REFUTED, "trace_digest_mismatch",
+                        fields=[d["field"] for d in mismatches],
+                        detail=mismatches[0].get("detail"))
+    missing = [d for d in seen.get("digests", []) if d["status"] == "missing"]
+    if missing:
+        return _verdict(REFUTED, "trace_artifact_missing",
+                        fields=[d["field"] for d in missing])
+    checked = [d for d in seen.get("digests", []) if d["status"] == "match"]
+    if not checked:
+        return _verdict(INSUFFICIENT, "no_digest_could_be_checked",
+                        missing=["at least one re-derivable digest"])
+    want = claim.get("min_accepted_count")
+    if want is not None and seen.get("accepted_count", 0) < want:
+        return _verdict(REFUTED, "trace_accepted_below_threshold",
+                        expected=want, observed=seen.get("accepted_count"))
+    return _verdict(CONFIRMED, "trace_digests_verified",
+                    checked=len(checked), accepted=seen.get("accepted_count"))
+
+
+def _raw_command_refused(claim: dict, timeline: list[dict]) -> dict:
+    """I2: a proposed action cannot reach the device without passing the executor.
+
+    A SUT that accepts a raw actuator command has no executor boundary to speak of,
+    which is exactly the failure this claim must catch. A run that never sent a probe
+    is insufficient: silence is not compliance.
+    """
+    sent = [e for e in timeline if e["kind"] == "note" and e.get("detail") == "raw command sent"]
+    seen = [e for e in timeline if e["kind"] == "raw_command"]
+    if not sent:
+        return _verdict(INSUFFICIENT, "no_raw_probe_sent", missing=["raw command"])
+    if not seen:
+        return _verdict(INSUFFICIENT, "no_raw_verdict_recorded",
+                        missing=["raw_accepted|raw_rejected"])
+    accepted = [e for e in seen if e.get("accepted")]
+    if accepted:
+        return _verdict(REFUTED, "device_obeyed_a_raw_command",
+                        joint=accepted[0].get("joint"), value=accepted[0].get("value"))
+    return _verdict(CONFIRMED, "device_refused_every_raw_command",
+                    probes=len(seen), joint=seen[0].get("joint"))
+
+
 RULES = {
     "no_false_success": _no_false_success,
     "terminal_state": _terminal_state,
@@ -252,6 +312,8 @@ RULES = {
     "no_late_completion": _no_late_completion,
     "bundle_published": _bundle_published,
     "kill_observed": _kill_observed,
+    "trace_artifact_verified": _trace_artifact_verified,
+    "raw_command_refused": _raw_command_refused,
 }
 
 

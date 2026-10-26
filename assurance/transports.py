@@ -91,6 +91,9 @@ class MockTransport:
             timeline.add("stop_ack", task_id=rest[0])
         elif kind == "cancelled" and rest:
             timeline.add("cancelled", task_id=rest[0])
+        elif kind in ("raw_accepted", "raw_rejected") and rest:
+            timeline.add("raw_command", joint=rest[0], accepted=kind == "raw_accepted",
+                         value=rest[1] if len(rest) > 1 else None)
         elif kind == "error":
             timeline.add("note", detail="sut_error:" + " ".join(rest))
         else:
@@ -279,9 +282,39 @@ class Ros2ActionTransport:
             self._rclpy.shutdown()
 
 
+class ArtifactTransport:
+    """A 'system under test' that is a published evidence artifact, not a process.
+
+    RoboTraceOpt is a diagnosis tool, not a robot: driving it as if it were a task
+    runtime would be a category error. It appears here as a transport so its
+    latency evidence travels through the same verification path as everything else,
+    while never being asked to produce an action or an ACK.
+    """
+
+    name = "traceartifact"
+    owns_process = False
+
+    def __init__(self, sut_args: list[str] | None = None) -> None:
+        self.sut_args = sut_args or []
+
+    def available(self) -> tuple[bool, str]:
+        return True, "reads published artifacts; no process is launched"
+
+    def start(self, timeline: Timeline) -> None:
+        timeline.add("note", detail="artifact transport started")
+
+    def stop(self, timeline: Timeline) -> None:
+        timeline.add("note", detail="artifact transport finished")
+
+
 def make_transport(scenario: dict):
+    if scenario["transport"] == "traceartifact":
+        return ArtifactTransport(scenario.get("sut_args", []))
     if scenario["transport"] == "mock":
         return MockTransport(scenario.get("sut_args", []))
+    if scenario["transport"] == "socketcan":
+        from .sut.socketcan import SocketCanTransport
+        return SocketCanTransport(sut_args=scenario.get("sut_args", []))
     if scenario["transport"] == "workbench":
         from .sut.workbench import WorkbenchTransport
         return WorkbenchTransport(scenario.get("sut_args", []))

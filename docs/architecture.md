@@ -59,3 +59,18 @@ what lets CI tell a working harness from a regressed one without a human reading
 - The mock SUT is a stand-in; it proves the decision path, not robot physics.
 - Only the ROS 2 action transport touches a real middleware stack.
 - No claim here is a functional-safety claim.
+
+## External evidence, not external code
+
+Two of the five transports attach evidence rather than drive a process:
+
+- **`traceartifact`** reads RoboTraceOpt's published `association-evidence-summary/v1`
+  and re-computes the digests itself. The tool stays an independent project; it is
+  never imported, and its own conclusions are never adopted as a verdict.
+- **`socketcan`** speaks the reference robot's frame layout over a real `AF_CAN`
+  socket. On a host without `CAP_NET_ADMIN` it reports unavailability and the run is
+  `insufficient_evidence` - a mock bus would have made the CAN row meaningless.
+
+Both follow the same rule as the workbench transport: the harness only trusts what
+it computed itself. A digest it re-derived, a checksum it verified, a process death
+it observed. Everything the subject says about itself is a claim.

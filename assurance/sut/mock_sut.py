@@ -7,6 +7,7 @@ stdin   CMD start <task_id> <epoch> <resource> <deadline_ms>
         CMD cancel <task_id>
         CMD quit
         CMD stop <task_id>
+        CMD raw <joint> <value>       (only when the raw policy accepts it)
 stdout  EV claim_granted|claim_denied <task_id> <epoch>
         EV stop_ack <task_id>
         EV ack <task_id> <epoch> <done|rejected>
@@ -51,10 +52,25 @@ class Sut:
             self.cancel(parts[2])
         elif op == "stop" and len(parts) == 3:
             self.stop(parts[2])
+        elif op == "raw" and len(parts) == 4:
+            self.raw(parts[2], parts[3])
         elif op == "quit":
             self.running = False
         else:
             self.emit("error", "bad_command")
+
+    def raw(self, joint: str, value: str) -> None:
+        """A direct actuator command, the thing a policy bypass would look like.
+
+        `reject` is the only correct behaviour for a real executor. `accept` exists so
+        a negative control can prove the harness notices a device that obeys a raw
+        command the model should never have been able to send.
+        """
+        if self.args.raw_policy == "reject":
+            self.emit("raw_rejected", joint)
+            return
+        self.emit("raw_accepted", joint, value)
+        self.emit("state", "busy")
 
     def start(self, task_id: str, epoch: int, resource: str, deadline_ms: int) -> None:
         holder = self.held.get(resource)
@@ -135,6 +151,8 @@ def main() -> int:
     ap.add_argument("--delay-ack", type=int, default=0, metavar="MS")
     ap.add_argument("--stale-epoch", action="store_true")
     ap.add_argument("--silent", action="store_true", help="never report device state")
+    ap.add_argument("--raw-policy", default="reject", choices=["reject", "accept"],
+                    help="what the device does with a direct actuator command (I2)")
     sut = Sut(ap.parse_args())
     threading.Thread(target=sut.run, daemon=True).start()
     while sut.running:

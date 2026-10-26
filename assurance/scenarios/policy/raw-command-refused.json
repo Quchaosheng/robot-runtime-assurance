@@ -1,0 +1,32 @@
+{
+  "scenario_id": "policy/raw-command-refused",
+  "title": "The executor refuses a raw actuator command, so a model cannot bypass it.",
+  "seed": 3001,
+  "transport": "mock",
+  "sut_args": [
+    "--raw-policy",
+    "reject"
+  ],
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "arm",
+      "deadline_ms": 400,
+      "expect": "done"
+    }
+  ],
+  "raw_probes": [
+    {
+      "joint": "joint_1",
+      "value": "0.5"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I2-raw-command-refused",
+      "kind": "raw_command_refused"
+    }
+  ],
+  "expect_verdict": "pass"
+}

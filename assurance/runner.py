@@ -57,7 +57,9 @@ def run_scenario(scenario: dict, out_dir: str | pathlib.Path) -> dict:
         timeline.add("run_end", outcome="transport_unavailable", detail=str(exc))
         return _finish(scenario, timeline, out_dir, transport_started=False)
 
-    if scenario["transport"] == "workbench":
+    if scenario["transport"] == "traceartifact":
+        _run_trace_artifact(scenario, timeline)
+    elif scenario["transport"] == "workbench":
         _run_workbench(scenario, transport, timeline, faults)
     elif scenario["transport"] == "ros2action":
         _run_ros2(scenario, transport, timeline, faults)
@@ -115,6 +117,53 @@ def _run_workbench(scenario: dict, transport, timeline: Timeline, faults: list[d
         if result.get("bundle"):
             transport.ingest_bundle(timeline, pathlib.Path(result["bundle"]),
                                     task_id=task["task_id"], requested_exit=kill is None)
+
+
+def _run_trace_artifact(scenario: dict, timeline: Timeline) -> None:
+    """Attach a latency tool's published artifact to the acceptance record.
+
+    No process is driven and nothing is judged from the tool's own conclusions: the
+    harness re-derives the digests itself and records only what it could check.
+    """
+    import pathlib
+
+    from .trace_artifacts import (
+        TraceArtifactError,
+        count_events,
+        load_summary,
+        verify_digests,
+    )
+
+    artifact = scenario.get("trace_artifact") or {}
+    summary_path = pathlib.Path(str(artifact.get("summary", "")))
+    roots = {
+        field: pathlib.Path(str(path))
+        for field, path in (artifact.get("digests") or {}).items()
+    }
+    timeline.add("note", detail="trace artifact requested", summary=str(summary_path),
+                 supplied=sorted(roots))
+    try:
+        summary = load_summary(summary_path)
+    except TraceArtifactError as error:
+        timeline.add("note", detail="trace artifact unusable", reason=str(error))
+        return
+    digests = verify_digests(summary, roots)
+    for field, path in (artifact.get("events") or {}).items():
+        try:
+            counted = count_events(pathlib.Path(str(path)))
+        except TraceArtifactError as error:
+            timeline.add("note", detail=f"normalized events unreadable: {error}")
+            continue
+        declared = summary.get(field.replace("_count", "_event_count")) or summary.get("runtime_event_count")
+        timeline.add("note", detail="normalized events counted",
+                     field=field, path=str(path), counted=counted, declared=declared,
+                     matches=declared == counted)
+    timeline.add("trace_verified", summary_schema=summary["schema_version"],
+                 accepted_count=summary.get("accepted_count"),
+                 accepted_rate=summary.get("accepted_rate"),
+                 runtime_event_count=summary.get("runtime_event_count"),
+                 ros2_event_count=summary.get("ros2_event_count"),
+                 digests=digests, requested=True)
 
 
 def _leftovers(output_dir) -> dict:
@@ -241,6 +290,15 @@ def _run_session(scenario: dict, transport, timeline: Timeline, faults: list[dic
         if all(_terminal_for(timeline, t["task_id"]) or t["task_id"] in cancelled
                for t in scenario["tasks"]):
             break
+
+    for probe in scenario.get("raw_probes", []):
+        try:
+            transport.send("raw", probe["joint"], probe["value"])
+            timeline.add("note", detail="raw command sent", joint=probe["joint"],
+                         value=str(probe["value"]))
+        except TransportError as exc:
+            timeline.add("note", detail=f"raw send failed: {exc}")
+        transport.drain(timeline, until_ms=200)
 
     for timer in timers:
         timer.cancel()

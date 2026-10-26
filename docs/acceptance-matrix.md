@@ -45,3 +45,15 @@ regression detectors for the tool itself:
 
 These three run against a checkout this harness never imports. They are skipped
 (not faked) when the checkout is absent, so a green run means a real process ran.
+
+## Boundary and platform rows
+
+| Scenario | Exercises | Expected |
+| --- | --- | --- |
+| `policy/raw-command-refused` | I2 from the positive side: the device refuses a raw command | pass |
+| `negative-controls/sut-accepts-raw-command` | I2 from the failing side: a device with no boundary is caught | **refute** |
+| `trace/latency-evidence-verified` | RoboTraceOpt's published summary with no local artifact | **insufficient** |
+| `socketcan/device-not-on-this-host` | a real SocketCAN adapter on a host without `CAP_NET_ADMIN` | **insufficient** |
+
+The last two are deliberate: a harness that only ever ships passing rows cannot show
+that its unprovable path works, and this host genuinely cannot run a CAN scenario.
