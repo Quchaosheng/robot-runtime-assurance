@@ -82,6 +82,13 @@ python3 -m assurance.cli junit  runs/nominal-normal-task--local --out junit.xml
 `python3 -m assurance.cli run` exits non-zero when the run did not match the scenario's
 `expect_verdict`, so it drops straight into CI.
 
+## Reports
+
+- [R01 feasibility study](reports/R01-具身系统验收工具链-可行性研究.md)
+- [R02 recall card](reports/R02-背诵卡.md)
+- [R03 first delivery](reports/R03-交付说明.md)
+- [R04 second delivery: black-box target, I2, SocketCAN, latency evidence](reports/R04-交付说明-第二轮.md)
+
 ## The black-box target: workbench-mobile-home-robot
 
 The harness ships a `workbench` transport that drives a **real** system under test
