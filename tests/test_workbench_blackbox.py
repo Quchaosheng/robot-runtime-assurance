@@ -24,12 +24,13 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SUT_ROOT = pathlib.Path(os.environ.get("ASSURANCE_WORKBENCH_ROOT", "/data/builds/caogao/wmhr"))
-SHIM = os.environ.get("ASSURANCE_WORKBENCH_SHIM", "/data/builds/caogao/.wbshim")
+from assurance.targets import workbench_root
+
+SUT_ROOT = workbench_root()
 
 needs_sut = pytest.mark.skipif(
-    not (SUT_ROOT / "tools/scripts/sim_cli.py").is_file(),
-    reason=f"workbench checkout not found at {SUT_ROOT}",
+    SUT_ROOT is None,
+    reason="no workbench checkout found (set ASSURANCE_WORKBENCH_ROOT)",
 )
 
 
@@ -125,8 +126,20 @@ def test_a_subject_self_report_is_never_an_independent_observation() -> None:
 
 
 def test_the_harness_never_imports_the_subject() -> None:
-    """A black-box verdict cannot rest on shared code: the SUT must not be importable here."""
+    """A black-box verdict cannot rest on shared code: the SUT must not be importable here.
+
+    Checked on the parse tree rather than on the text, because a docstring that
+    *talks about* importing workbench is not an import. The text version of this test
+    failed for exactly that reason, which is a good argument for not grepping code.
+    """
+    import ast
+
     assert "workbench" not in sys.modules
-    source = (ROOT / "assurance/sut/workbench.py").read_text()
-    assert "import workbench" not in source
-    assert "from workbench" not in source
+    for path in (ROOT / "assurance").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("workbench"), f"{path} imports {alias.name}"
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith("workbench"), f"{path} imports {node.module}"

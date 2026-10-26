@@ -12,12 +12,10 @@ upgrade when a privileged runner (netns/vcan) is available.
 
 from __future__ import annotations
 
-import json
 import pathlib
 import threading
 import time
 
-from .registry import load as load_scenario
 from .timeline import Timeline
 from .transports import TransportError, make_transport
 
@@ -135,7 +133,7 @@ def _run_trace_artifact(scenario: dict, timeline: Timeline) -> None:
     )
 
     artifact = scenario.get("trace_artifact") or {}
-    summary_path = pathlib.Path(str(artifact.get("summary", "")))
+    summary_path = _resolve_artifact_path(str(artifact.get("summary", "")))
     roots = {
         field: pathlib.Path(str(path))
         for field, path in (artifact.get("digests") or {}).items()
@@ -164,6 +162,26 @@ def _run_trace_artifact(scenario: dict, timeline: Timeline) -> None:
                  runtime_event_count=summary.get("runtime_event_count"),
                  ros2_event_count=summary.get("ros2_event_count"),
                  digests=digests, requested=True)
+
+
+def _resolve_artifact_path(value: str) -> pathlib.Path:
+    """A relative artifact path is resolved against the known tool root, not the cwd.
+
+    A scenario file must be portable: an absolute path from the author's machine is
+    not evidence, it is a broken promise to everyone else who checks out the repo.
+    """
+    import pathlib as _pathlib
+
+    candidate = _pathlib.Path(value)
+    if candidate.is_absolute():
+        return candidate
+    from .targets import CHECKOUT_PARENT, traceopt_root
+
+    root = traceopt_root()
+    if root is not None:
+        trimmed = value.split("/", 1)[1] if value.startswith("RoboTraceOpt/") else value
+        return root / trimmed
+    return CHECKOUT_PARENT / value
 
 
 def _leftovers(output_dir) -> dict:
@@ -210,16 +228,20 @@ def _verify_bundle(bundle: str | None) -> tuple[bool | None, str]:
 
 def _run_workbench_killed(transport, task: dict, output_dir, *, at_ms: int) -> dict:
     """Start the SUT, kill it mid-run, and report what it left behind."""
+    import os as _os
     import subprocess
     import sys
     import time
 
-    env = {**__import__("os").environ}
+    env = {**_os.environ}
     cli = transport.root / "tools/scripts/sim_cli.py"
     command = [sys.executable, str(cli), "run", task["sut_scenario"], "--runner",
                task.get("runner", "scripted"), "--output-dir", str(output_dir), "--json"]
     from .sut.workbench import _shim
-    env["PYTHONPATH"] = _shim()
+
+    shim = _shim()
+    if shim:
+        env["PYTHONPATH"] = shim
     proc = subprocess.Popen(command, cwd=str(transport.root), env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(max(at_ms, 0) / 1000.0)

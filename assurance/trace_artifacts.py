@@ -72,9 +72,10 @@ def load_summary(path: pathlib.Path) -> dict[str, Any]:
             f"{payload['ros2_event_count']}"
         )
     rate = payload.get("accepted_rate")
-    if rate is not None:
-        if not isinstance(rate, (int, float)) or isinstance(rate, bool) or not 0.0 <= rate <= 1.0:
-            raise TraceArtifactError(f"{path}: accepted_rate must be within [0, 1]")
+    if rate is not None and (
+        not isinstance(rate, (int, float)) or isinstance(rate, bool) or not 0.0 <= rate <= 1.0
+    ):
+        raise TraceArtifactError(f"{path}: accepted_rate must be within [0, 1]")
     return payload
 
 

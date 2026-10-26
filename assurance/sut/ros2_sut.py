@@ -17,12 +17,12 @@ import time
 class Ros2Sut:
     def __init__(self, args: argparse.Namespace) -> None:
         import rclpy
+        from action_tutorials_interfaces.action import Fibonacci
         from rclpy.action import ActionServer, CancelResponse, GoalResponse
         from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.node import Node
-        from action_tutorials_interfaces.action import Fibonacci
-        from std_srvs.srv import Trigger
         from std_msgs.msg import String
+        from std_srvs.srv import Trigger
 
         self.args = args
         self.time = time

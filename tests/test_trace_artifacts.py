@@ -139,9 +139,11 @@ def test_event_count_refuses_a_malformed_line(tmp_path: pathlib.Path) -> None:
 
 def test_the_committed_robot_trace_opt_fixture_still_parses() -> None:
     """The reader is pinned to a real published summary, not only to our own bytes."""
-    fixture = pathlib.Path("/data/builds/caogao/research/RoboTraceOpt/tests/fixtures/association/w1_real_summary.json")
-    if not fixture.is_file():
-        pytest.skip("RoboTraceOpt checkout not present")
+    from assurance.targets import traceopt_fixture
+
+    fixture = traceopt_fixture()
+    if fixture is None:
+        pytest.skip("RoboTraceOpt checkout not present (set ASSURANCE_TRACEOPT_ROOT)")
     summary = load_summary(fixture)
     assert summary["runtime_event_count"] == 642
     assert 0.0 <= summary["accepted_rate"] <= 1.0

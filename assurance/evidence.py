@@ -121,9 +121,11 @@ def render_report(bundle: str | pathlib.Path) -> str:
         "",
         f"- transport: `{manifest['transport']}`   seed: `{manifest['seed']}`",
         headline,
-        f"- claims: {verdict['counts']['confirmed']} confirmed / "
-        f"{verdict['counts']['refuted']} refuted / "
-        f"{verdict['counts']['insufficient_evidence']} insufficient",
+        (
+            f"- claims: {verdict['counts']['confirmed']} confirmed / "
+            f"{verdict['counts']['refuted']} refuted / "
+            f"{verdict['counts']['insufficient_evidence']} insufficient"
+        ),
         f"- digest: `{manifest['verdict_digest']}`",
         "",
         "## Claims",
@@ -142,9 +144,16 @@ def render_report(bundle: str | pathlib.Path) -> str:
             lines.append(f"| `{row['fault']}` | `{row['task_id']}` | {'yes' if row['exercised'] else 'NO'} |")
     missing = [c for c in verdict["claims"] if c["status"] == "insufficient_evidence"]
     if missing:
-        lines += ["", "## Not proven", "",
-                  "These claims were neither confirmed nor refuted - the run did not "
-                  "produce the evidence they need:", ""]
+        lines += [
+            "",
+            "## Not proven",
+            "",
+            (
+                "These claims were neither confirmed nor refuted - the run did not "
+                "produce the evidence they need:"
+            ),
+            "",
+        ]
         lines += [f"- `{c['claim_id']}`: missing {c.get('missing', 'unspecified')}" for c in missing]
     return "\n".join(lines) + "\n"
 

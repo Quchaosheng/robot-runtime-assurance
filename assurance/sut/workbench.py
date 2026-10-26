@@ -31,17 +31,18 @@ import sys
 from ..timeline import Timeline
 from ..transports import TransportError
 
-DEFAULT_SUT_ROOT = pathlib.Path(os.environ.get("ASSURANCE_WORKBENCH_ROOT", "/data/builds/caogao/wmhr"))
-
 
 def _shim() -> str:
-    """The local import shim, when the SUT is not installed as a package.
+    """The optional import shim for a workbench checkout that is not pip-installed.
 
-    A checkout without `pip install -e .` cannot resolve its own namespace
-    packages. The shim lives outside the SUT so this harness still imports
-    nothing from it; it only teaches the SUT's own interpreter where its files are.
+    A checkout without `pip install -e .` cannot resolve its own namespace packages.
+    The shim lives outside the SUT so this harness still imports nothing from it; it
+    only teaches the SUT's own interpreter where its files are. Empty when absent,
+    which is correct for an installed SUT.
     """
-    return os.environ.get("ASSURANCE_WORKBENCH_SHIM", "/data/builds/caogao/.wbshim")
+    from ..targets import workbench_shim
+
+    return workbench_shim() or ""
 
 
 class WorkbenchTransport:
@@ -49,23 +50,28 @@ class WorkbenchTransport:
     owns_process = True
 
     def __init__(self, sut_args: list[str] | None = None) -> None:
-        self.root = pathlib.Path(os.environ.get("ASSURANCE_WORKBENCH_ROOT", str(DEFAULT_SUT_ROOT)))
+        from ..targets import workbench_root
+
+        self.root = workbench_root()
         self.sut_args = sut_args or []
         self.proc: subprocess.Popen | None = None
         self.bundle: pathlib.Path | None = None
         self.published: dict | None = None
 
     def available(self) -> tuple[bool, str]:
+        if self.root is None:
+            return False, "no workbench checkout found (set ASSURANCE_WORKBENCH_ROOT)"
         cli = self.root / "tools/scripts/sim_cli.py"
         if not cli.is_file():
-            return False, f"no workbench checkout at {self.root}"
+            return False, f"{self.root} has no tools/scripts/sim_cli.py"
         return True, str(cli)
 
     # -- lifecycle ---------------------------------------------------------
     def start(self, timeline: Timeline) -> None:
+        ok, why = self.available()
+        if not ok:
+            raise TransportError(why)
         cli = self.root / "tools/scripts/sim_cli.py"
-        if not cli.is_file():
-            raise TransportError(f"workbench CLI not found at {cli}")
         self.bundle = None
         timeline.add("note", detail="workbench SUT configured", root=str(self.root), cli=str(cli))
 
@@ -81,7 +87,10 @@ class WorkbenchTransport:
     def run_task(self, scenario_id: str, output_dir: pathlib.Path, *, runner: str = "scripted",
                  timeout_s: int = 120) -> dict:
         """Run one registered SUT scenario and return its published metadata."""
-        env = {**os.environ, "PYTHONPATH": _shim()}
+        env = {**os.environ}
+        shim = _shim()
+        if shim:
+            env["PYTHONPATH"] = shim
         command = [
             sys.executable, str(self.root / "tools/scripts/sim_cli.py"),
             "run", scenario_id, "--runner", runner,

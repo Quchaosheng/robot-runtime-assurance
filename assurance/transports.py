@@ -9,7 +9,7 @@ A transport only translates. It does not judge, retry, or hide faults.
 
 from __future__ import annotations
 
-import os
+import contextlib
 import queue
 import signal
 import subprocess
@@ -112,10 +112,8 @@ class MockTransport:
             return
         code = self.proc.poll()
         if code is None:
-            try:
+            with contextlib.suppress(TransportError):
                 self.send("quit")
-            except TransportError:
-                pass
             try:
                 code = self.proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
@@ -203,7 +201,6 @@ class Ros2ActionTransport:
     def run_task(self, task_id: str, epoch: int, order: int, deadline_ms: int,
                  timeline: Timeline, expect_timeout: bool = False) -> None:
         """Send one goal and wait no longer than deadline_ms for the result."""
-        rclpy = self._rclpy
         timeline.add("task_start", task_id=task_id, epoch=epoch, deadline_ms=deadline_ms,
                      injected_timeout=expect_timeout)
         goal = self._action_type.Goal()
@@ -271,10 +268,9 @@ class Ros2ActionTransport:
     def stop(self, timeline: Timeline) -> None:
         if self.node is not None:
             self.drain(timeline, until_ms=100)
-        if self.proc:
-            if self.proc.poll() is None:
-                self.proc.kill()
-                timeline.add("sut_exit", returncode=self.proc.wait(timeout=5))
+        if self.proc and self.proc.poll() is None:
+            self.proc.kill()
+            timeline.add("sut_exit", returncode=self.proc.wait(timeout=5))
         if self.node is not None:
             self.node.destroy_node()
             self.node = None

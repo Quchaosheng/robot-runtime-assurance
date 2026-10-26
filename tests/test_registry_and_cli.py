@@ -16,7 +16,7 @@ SCHEMA_DIR = pathlib.Path(__file__).parent.parent / "assurance" / "schemas"
 def test_every_scenario_matches_its_schema():
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads((SCHEMA_DIR / "scenario.schema.json").read_text())
-    for name, path in reg.registry().items():
+    for path in reg.registry().values():
         jsonschema.validate(json.loads(path.read_text()), schema)
 
 

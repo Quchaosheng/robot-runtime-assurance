@@ -67,7 +67,7 @@ never `confirmed`. This is deliberate and covered by tests.
 No ROS 2 required for the default path.
 
 ```bash
-git clone <this repo> && cd robot-runtime-assurance
+git clone https://github.com/Quchaosheng/robot-runtime-assurance && cd robot-runtime-assurance
 python3 -m pip install -e ".[dev]"
 
 python3 -m assurance.cli doctor                      # what this machine can and cannot test
@@ -88,6 +88,27 @@ python3 -m assurance.cli junit  runs/nominal-normal-task--local --out junit.xml
 - [R02 recall card](reports/R02-背诵卡.md)
 - [R03 first delivery](reports/R03-交付说明.md)
 - [R04 second delivery: black-box target, I2, SocketCAN, latency evidence](reports/R04-交付说明-第二轮.md)
+
+## Pointing the harness at a real system
+
+Nothing in this repo hardcodes an absolute path. A target is found by looking for a
+sibling checkout next to this one (`wmhr`, `workbench-mobile-home-robot`,
+`RoboTraceOpt`, `research/...`), identified by a marker file rather than by name:
+
+| Target | Env var | Marker that must exist |
+| --- | --- | --- |
+| workbench | `ASSURANCE_WORKBENCH_ROOT` | `tools/scripts/sim_cli.py` |
+| import shim (optional) | `ASSURANCE_WORKBENCH_SHIM` | `sitecustomize.py` |
+| RoboTraceOpt | `ASSURANCE_TRACEOPT_ROOT` | `diagnosis/` |
+
+`python3 -m assurance.cli doctor` prints exactly what it resolved, and a target it
+cannot find is reported **unavailable** rather than guessed at. Scenarios that need
+it are then `insufficient_evidence`, not silently skipped.
+
+If the workbench checkout is not `pip install -e .`-installed, point
+`ASSURANCE_WORKBENCH_SHIM` at a directory containing a `sitecustomize.py` that maps
+its namespace packages - the harness never imports the subject, it only tells the
+subject's own interpreter where its own files are.
 
 ## The black-box target: workbench-mobile-home-robot
 

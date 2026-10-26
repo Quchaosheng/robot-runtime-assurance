@@ -14,11 +14,10 @@ import argparse
 import json
 import pathlib
 import shutil
-import subprocess
-import sys
 
-from .evidence import default_out_dir, render_report, write_junit, verify_bundle
-from .registry import ScenarioError, ROOT as SCENARIO_ROOT, load, registry
+from .evidence import default_out_dir, render_report, verify_bundle, write_junit
+from .registry import ROOT as SCENARIO_ROOT
+from .registry import ScenarioError, load, registry
 from .runner import run_scenario
 from .transports import MockTransport, Ros2ActionTransport
 
@@ -51,6 +50,13 @@ def cmd_doctor(_args) -> int:
     width = max(len(r[0]) for r in rows)
     for name, ok, why in rows:
         print(f"{name:<{width}}  {'available  ' if ok else 'UNAVAILABLE'}  {why}")
+    print()
+    from .targets import describe_targets
+
+    print()
+    print("external targets this run would use:")
+    for name, where in describe_targets().items():
+        print(f"  {name:<16} {where}")
     print()
     print(f"scenarios: {len(registry())} (in {SCENARIO_ROOT})")
     print("A transport marked UNAVAILABLE still runs: the run is recorded and the verdict "

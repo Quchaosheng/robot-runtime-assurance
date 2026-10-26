@@ -74,6 +74,7 @@ class SocketCanTransport:
         self.sut_args = sut_args or []
         self.sock: socket.socket | None = None
         self.command_id = 0
+        self.pending: dict[int, str] = {}
 
     # -- availability ------------------------------------------------------
     def available(self) -> tuple[bool, str]:
@@ -118,6 +119,10 @@ class SocketCanTransport:
         op = str(parts[0])
         task_id = str(parts[1]) if len(parts) > 1 else ""
         self.command_id = (self.command_id + 1) & 0xFFFF
+        # Remember which task a command id belongs to. Without this the ACK for
+        # command 7 could be attributed to whichever task happens to be in flight,
+        # which is the contamination I6 exists to prevent.
+        self.pending[self.command_id] = task_id
         opcode = OP_START if op == "start" else OP_CANCEL
         self._frame(CAN_ID_COMMAND, bytes([opcode]) + struct.pack(">H", self.command_id))
         self._frame(CAN_ID_STOP, b"\x00" + struct.pack(">H", self.command_id))
@@ -129,7 +134,7 @@ class SocketCanTransport:
         while True:
             try:
                 frame = self.sock.recv(16)
-            except (TimeoutError, socket.timeout):
+            except TimeoutError:
                 if time.monotonic() >= deadline:
                     return
                 continue
@@ -144,15 +149,25 @@ class SocketCanTransport:
             if until_ms and time.monotonic() >= deadline:
                 return
 
+    def _task_for(self, command_id: int) -> str:
+        """The task a command id was issued for, or an explicit unknown.
+
+        `can:<id>` is kept for a command this transport never sent: that is an
+        uncorrelated ACK, and naming it as if it belonged to a task would be a lie.
+        """
+        return self.pending.get(command_id, f"can-uncorrelated:{command_id}")
+
     def _record(self, can_id: int, data: bytes, timeline: Timeline) -> None:
         can_id &= socket.CAN_SFF_MASK if hasattr(socket, "CAN_SFF_MASK") else 0x7FF
         if can_id == CAN_ID_ACK and len(data) >= 4:
             command_id = int.from_bytes(data[1:3], "big")
             accepted = data[3] == RESULT_OK
-            timeline.add("ack", task_id=f"can:{command_id}",
-                         status="done" if accepted else "rejected", can_id=can_id)
+            timeline.add("ack", task_id=self._task_for(command_id),
+                         status="done" if accepted else "rejected",
+                         command_id=command_id, can_id=can_id)
         elif can_id == CAN_ID_STOP_ACK and len(data) >= 3:
-            timeline.add("stop_ack", task_id=f"can:{int.from_bytes(data[1:3], 'big')}")
+            command_id = int.from_bytes(data[1:3], "big")
+            timeline.add("stop_ack", task_id=self._task_for(command_id), command_id=command_id)
         else:
             timeline.add("note", detail="unexpected can frame", can_id=can_id,
                          payload=data.hex())

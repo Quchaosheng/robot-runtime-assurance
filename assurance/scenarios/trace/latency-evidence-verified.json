@@ -1,10 +1,10 @@
 {
   "scenario_id": "trace/latency-evidence-verified",
-  "title": "RoboTraceOpt's published latency summary is admitted only if its digests re-derive.",
+  "title": "A latency summary this checkout can find must be admitted only if its digests re-derive.",
   "seed": 2001,
   "transport": "traceartifact",
   "trace_artifact": {
-    "summary": "/data/builds/caogao/research/RoboTraceOpt/tests/fixtures/association/w1_real_summary.json"
+    "summary": "RoboTraceOpt/tests/fixtures/association/w1_real_summary.json"
   },
   "tasks": [
     {
