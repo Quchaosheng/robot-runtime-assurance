@@ -123,6 +123,40 @@ def cmd_matrix(args) -> int:
     return 0
 
 
+def cmd_gate(args) -> int:
+    """Run the whole suite as a release gate.
+
+    Exit 0 only when every scenario that could run behaved as its own `expect_verdict`
+    says. Blocked transports are reported and do not fail the gate, because a CI runner
+    without vcan or ROS 2 still has to be able to say "I could not run this" without
+    turning the gate permanently red.
+
+    The per-scenario bundle paths are printed so a failing job can attach the evidence,
+    and `--junit` writes the machine-readable form CI already understands.
+    """
+    from .runner import run_suite
+
+    summary = run_suite(args.filter, out_root=args.out)
+    for record in summary["records"]:
+        marker = {
+            "pass": "PASS", "transport_unavailable": "BLOCK", "mismatch": "FAIL", "error": "ERROR",
+        }.get(record["status"], "FAIL")
+        ceiling = record.get("evidence_ceiling")
+        ceiling_text = "" if ceiling is None else f" ceiling=L{ceiling}"
+        simulated = " [SIMULATED]" if record.get("simulated") else ""
+        print(f"{marker:5s} {record['scenario']:<48s}{ceiling_text}{simulated}")
+        if marker in {"FAIL", "ERROR"}:
+            print(f"      expected {record.get('expected')} observed {record.get('observed')}")
+            if record.get("bundle"):
+                print(f"      evidence: {record['bundle']}")
+    print()
+    print(f"{summary['scenarios']} scenarios, {len(summary['blocked'])} blocked, "
+          f"{len(summary['failures'])} failed")
+    if getattr(args, "as_json", False):
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["ok"] else 1
+
+
 def cmd_list(_args) -> int:
     for name, path in registry().items():
         scenario = json.loads(path.read_text())
@@ -210,6 +244,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("doctor").set_defaults(func=cmd_doctor)
     sub.add_parser("list").set_defaults(func=cmd_list)
+    gate = sub.add_parser("gate", help="run the whole suite as a release gate")
+    gate.add_argument("filter", nargs="?", default=None, help="only scenarios whose id contains this")
+    gate.add_argument("--out", default="runs", help="where evidence bundles are written")
+    gate.add_argument("--json", action="store_true", dest="as_json")
+    gate.set_defaults(func=cmd_gate)
     matrix = sub.add_parser("matrix", help="print the invariant x evidence-level matrix")
     matrix.add_argument("--json", action="store_true", dest="as_json")
     matrix.set_defaults(func=cmd_matrix)

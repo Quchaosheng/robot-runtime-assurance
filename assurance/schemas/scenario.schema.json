@@ -158,7 +158,8 @@
               "bundle_published",
               "kill_observed",
               "trace_artifact_verified",
-              "raw_command_refused"
+              "raw_command_refused",
+              "no_staging_residue"
             ]
           },
           "invariant": {
@@ -205,6 +206,10 @@
               3
             ],
             "description": "evidence level this claim needs before it may be confirmed"
+          },
+          "stale_after_s": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

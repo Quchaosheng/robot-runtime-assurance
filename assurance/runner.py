@@ -111,6 +111,7 @@ def _run_workbench(scenario: dict, transport, timeline: Timeline, faults: list[d
                          reason="assurance killed the SUT mid-run")
             leftover = _leftovers(output_dir)
             timeline.add("note", detail="post-kill leftovers", partial=leftover["partial"],
+                         partial_stale=leftover["partial_stale"],
                          published=leftover["published"], output_dir=str(output_dir))
         if result.get("bundle"):
             transport.ingest_bundle(timeline, pathlib.Path(result["bundle"]),
@@ -184,13 +185,31 @@ def _resolve_artifact_path(value: str) -> pathlib.Path:
     return CHECKOUT_PARENT / value
 
 
-def _leftovers(output_dir) -> dict:
-    """What a killed run left behind. A published bundle after a kill is a bug."""
+def _leftovers(output_dir, *, stale_after_s: int = 700) -> dict:
+    """What a killed run left behind. A published bundle after a kill is a bug.
+
+    ``partial_stale`` separates "there is a staging directory" from "there is residue".
+    A directory younger than the longest permitted run may belong to a concurrent
+    process doing its job; only ones older than that cannot.
+    """
     import pathlib
+    import time
 
     root = pathlib.Path(output_dir)
+    cutoff = time.time() - stale_after_s
+    partials = sorted(root.glob(".*.partial"))
+    # A directory that vanishes between glob and stat is not residue, so the error is
+    # ignored per entry rather than aborting the whole inspection.
+    def _old_enough(candidate: pathlib.Path) -> bool:
+        try:
+            return candidate.stat().st_mtime <= cutoff
+        except OSError:
+            return False
+
+    stale = [candidate.name for candidate in partials if _old_enough(candidate)]
     return {
-        "partial": sorted(str(p.name) for p in root.glob(".*.partial")),
+        "partial": sorted(str(p.name) for p in partials),
+        "partial_stale": stale,
         "published": sorted(str(p.name) for p in root.iterdir()
                             if p.is_dir() and not p.name.startswith(".")),
     }
@@ -421,3 +440,59 @@ def _finish(scenario: dict, timeline: Timeline, out_dir, transport_started: bool
                "blocked_by": None if matched else blocked,
                "unexercised": unexercised}
     return write_bundle(scenario, timeline.events, verdict, coverage, out_dir)
+
+
+def run_suite(
+    scenario_filter: str | None = None,
+    *,
+    out_root: str | pathlib.Path = "runs",
+) -> dict:
+    """Run every shipped scenario and summarise, for use as a release gate.
+
+    This is what a CI job calls. It adds the two things a gate needs and a human run
+    does not: a stable decision (`ok`), and a per-scenario record naming the bundle, so
+    the job can attach the evidence and a reviewer can open the run that failed.
+
+    A scenario whose transport is unavailable is *blocked*, not failed. The run still
+    happened and still recorded why. A scenario that ran and disagreed with its own
+    expectation is a failure. Folding those together is how a gate becomes permanently
+    red on a machine that cannot run a transport, which teaches people to ignore it.
+    """
+    import pathlib as _pathlib
+
+    from .registry import load as _load_one
+    from .registry import registry
+
+    records = []
+    for name in sorted(registry()):
+        if scenario_filter and scenario_filter not in name:
+            continue
+        scenario = _load_one(name)
+        out = _pathlib.Path(out_root) / name.replace("/", "-")
+        try:
+            bundle = run_scenario(scenario, out)
+        except Exception as error:
+            records.append({"scenario": name, "status": "error", "detail": str(error), "bundle": None})
+            continue
+        records.append(
+            {
+                "scenario": name,
+                "status": "pass" if bundle.get("passed") else (bundle.get("blocked_by") or "mismatch"),
+                "expected": bundle.get("expected_verdict"),
+                "observed": bundle.get("observed_verdict"),
+                "counts": bundle.get("counts"),
+                "simulated": bundle.get("simulated"),
+                "evidence_ceiling": bundle.get("evidence_ceiling"),
+                "bundle": bundle.get("bundle"),
+            }
+        )
+
+    failures = [r for r in records if r["status"] not in {"pass", "transport_unavailable"}]
+    blocked = [r for r in records if r["status"] == "transport_unavailable"]
+    return {
+        "scenarios": len(records),
+        "failures": failures,
+        "blocked": blocked,
+        "records": records,
+        "ok": not failures,
+    }

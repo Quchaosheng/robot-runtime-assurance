@@ -1,0 +1,84 @@
+# Drop-in release gate for a system under test.
+#
+# Copy this file into <sut>/.github/workflows/acceptance-gate.yml and pin ASSURANCE_REF
+# to a released tag. The harness is installed by tag, not by branch: a gate that
+# tracks a moving branch cannot tell you which rules judged a merge.
+#
+# Two things make this usable rather than decorative:
+#
+#   * the evidence bundles are uploaded even when the job fails, so a reviewer can
+#     open the run that broke instead of re-running it;
+#   * a transport the runner cannot provide (no vcan, no ROS 2) reports BLOCKED, not
+#     a failure. A gate that is permanently red on infrastructure makes people stop
+#     reading it, which is worse than a gate with fewer rules.
+
+name: acceptance-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Pin the harness version this gate judges with. Changing it is a deliberate commit.
+  ASSURANCE_REF: v0.2.0
+  SUT_ROOT: ${{ github.workspace }}
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check out the assurance harness at the pinned tag
+        uses: actions/checkout@v4
+        with:
+          repository: Quchaosheng/robot-runtime-assurance
+          ref: ${{ env.ASSURANCE_REF }}
+          path: .assurance
+
+      - name: Install the harness
+        run: python -m pip install -e ".assurance[dev]"
+
+      - name: Doctor
+        # Reported, never fatal: it tells the reviewer which transports this runner
+        # could actually provide, which is why a BLOCKED row is not a failure.
+        run: python -m assurance.cli doctor || true
+
+      - name: Acceptance gate
+        env:
+          ASSURANCE_WORKBENCH_ROOT: ${{ github.workspace }}
+          ASSURANCE_RUN_ID: ${{ github.event.pull_request.number || github.run_id }}
+        run: |
+          set +e
+          python -m assurance.cli gate --out acceptance-runs --json > acceptance-summary.json 2> acceptance-summary.txt
+          status=$?
+          set -e
+          cat acceptance-summary.txt
+          exit "$status"
+
+      - name: Upload evidence bundles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-evidence
+          path: acceptance-runs/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload the summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-summary
+          path: |
+            acceptance-summary.json
+            acceptance-summary.txt
+          if-no-files-found: warn

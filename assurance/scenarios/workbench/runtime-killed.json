@@ -27,6 +27,12 @@
       "kind": "kill_observed",
       "requires": "L1",
       "invariant": "I7"
+    },
+    {
+      "claim_id": "I7-no-staging-residue",
+      "kind": "no_staging_residue",
+      "invariant": "I7",
+      "requires": "L1"
     }
   ],
   "expect_verdict": "pass"

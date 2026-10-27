@@ -57,6 +57,10 @@ def write_bundle(scenario: dict, timeline: list[dict], verdict: dict,
         "sample_matched": verdict.get("sample_matched"),
         "unexercised": verdict.get("unexercised", []),
         "counts": verdict["counts"],
+        # The ceiling is part of what this bundle claims, so it belongs in the
+        # manifest a reviewer reads and in the verdict a replay recomputes.
+        "evidence_ceiling": verdict.get("evidence_ceiling"),
+        "simulated": verdict.get("simulated"),
     }
     _dump(out / "manifest.json", manifest)
 

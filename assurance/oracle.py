@@ -335,6 +335,33 @@ def _raw_command_refused(claim: dict, timeline: list[dict]) -> dict:
                     probes=len(seen), joint=seen[0].get("joint"))
 
 
+def _no_staging_residue(claim: dict, timeline: list[dict]) -> dict:
+    """A killed or failed run must not leave unpublished staging directories behind.
+
+    This claim exists because of a real replay: restoring the `.partial` residue bug in
+    the subject left the gate green. The defect was not below the evidence level - it
+    was simply not asked about. An L1 harness can see this: it is its own output
+    directory, and listing it is an observation it makes itself.
+
+    Only directories that cannot belong to a live run count. A `.partial` directory
+    younger than the longest permitted run may be a concurrent process working normally,
+    and reporting that as residue would make the claim fire on healthy systems.
+    """
+
+    window = claim.get("stale_after_s", 700)
+    observations = [
+        e for e in timeline if e["kind"] == "note" and e.get("detail") == "post-kill leftovers"
+    ]
+    if not observations:
+        return _verdict(INSUFFICIENT, "no_output_directory_inspected",
+                        missing=["post-kill leftovers observation"])
+    stale = [item for entry in observations for item in (entry.get("partial_stale") or [])]
+    if stale:
+        return _verdict(REFUTED, "staging_residue_left_behind", paths=stale[:5], count=len(stale))
+    return _verdict(CONFIRMED, "no_stale_staging_residue",
+                    inspected=len(observations), window_s=window)
+
+
 RULES = {
     "no_false_success": _no_false_success,
     "terminal_state": _terminal_state,
@@ -347,6 +374,7 @@ RULES = {
     "no_late_completion": _no_late_completion,
     "bundle_published": _bundle_published,
     "kill_observed": _kill_observed,
+    "no_staging_residue": _no_staging_residue,
     "trace_artifact_verified": _trace_artifact_verified,
     "raw_command_refused": _raw_command_refused,
 }
