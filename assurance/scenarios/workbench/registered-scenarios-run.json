@@ -18,7 +18,9 @@
     {
       "claim_id": "I1-bundle-published",
       "kind": "bundle_published",
-      "scenario_ref": "normal-001"
+      "scenario_ref": "normal-001",
+      "requires": "L1",
+      "invariant": "I1"
     }
   ],
   "expect_verdict": "pass"

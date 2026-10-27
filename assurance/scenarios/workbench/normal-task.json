@@ -18,12 +18,16 @@
     {
       "claim_id": "I1-bundle-published",
       "kind": "bundle_published",
-      "scenario_ref": "normal-001"
+      "scenario_ref": "normal-001",
+      "requires": "L1",
+      "invariant": "I1"
     },
     {
       "claim_id": "I6-ack-carries-task-epoch",
       "kind": "ack_matches_task",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I6"
     }
   ],
   "expect_verdict": "pass"

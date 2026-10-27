@@ -16,7 +16,9 @@
     {
       "claim_id": "I7-can-reaches-safe-state",
       "kind": "terminal_state",
-      "expect_state": "safe_stop"
+      "expect_state": "safe_stop",
+      "requires": "L0",
+      "invariant": "I5"
     }
   ],
   "expect_verdict": "insufficient"

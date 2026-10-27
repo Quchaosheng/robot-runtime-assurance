@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from .levels import Level
+
 CONFIRMED, REFUTED, INSUFFICIENT = "confirmed", "refuted", "insufficient_evidence"
 
 
@@ -19,22 +21,55 @@ def _terminal(timeline: list[dict], task_id: str) -> list[dict]:
             and e["kind"] in ("ack", "rejected", "cancelled", "timeout")]
 
 
+def _evidence_levels(timeline: list[dict]) -> set[int]:
+    """Every level present in the timeline, ignoring events the harness asked for.
+
+    ``requested: true`` means the harness triggered it (a clean shutdown it asked for),
+    which proves nothing about the subject. Such an event keeps its kind for
+    bookkeeping but contributes no level.
+    """
+    return {
+        int(event.get("level", 0))
+        for event in timeline
+        if not event.get("requested")
+    }
+
+
 def _independent_observations(timeline: list[dict]) -> list[str]:
-    """Evidence that does not come from the same channel as the ACK."""
-    # An exit the harness asked for proves nothing about the SUT; a kill or a crash does.
-    kinds = {e["kind"] for e in timeline if not e.get("requested")}
-    independent = [k for k in ("device_state", "sut_exit", "sut_killed") if k in kinds]
-    # A bundle this harness hashed itself is an observation of the *artifact*, not a
-    # report from the subject. It can confirm a provenance claim; it can never
-    # confirm that the robot did anything.
-    if any(e["kind"] == "bundle_verified" for e in timeline):
-        independent.append("bundle_verified")
-    # Same reasoning for a latency artifact: the harness re-derived the digests.
-    if any(e["kind"] == "trace_verified"
-           and any(d["status"] == "match" for d in e.get("digests", []))
-           for e in timeline):
-        independent.append("trace_verified")
-    return independent
+    """Kinds that do not come from the same channel as the ACK, at level >= L1.
+
+    This used to be a hand-maintained list of kinds, which let a self-reported
+    ``device_state`` count as independent because it happened to be in the list. The
+    level is now the authority: L0 evidence is the subject's own word no matter what
+    the event is called.
+
+    ``trace_verified`` and ``bundle_verified`` are the harness's own observations of an
+    artifact, so they count here; they can confirm a provenance claim and can never
+    confirm that a robot moved, which their own rules encode.
+    """
+    return sorted(
+        {
+            str(event["kind"])
+            for event in timeline
+            if not event.get("requested") and int(event.get("level", 0)) >= 1
+        }
+    )
+
+
+def _required_level(claim: dict) -> int | None:
+    """The level a claim demands, or None when it forgot to say.
+
+    None is deliberately not a default of 0: a claim without `requires` cannot be
+    confirmed at all, because the alternative is a newly added claim silently
+    inheriting "self-report is enough".
+    """
+    value = claim.get("requires")
+    if value is None:
+        return None
+    try:
+        return int(Level.parse(value))
+    except ValueError as error:
+        raise ValueError(f"claim {claim.get('claim_id')!r} has an unusable requires: {error}") from error
 
 
 def _verdict(status: str, reason: str, **extra) -> dict:
@@ -317,21 +352,54 @@ RULES = {
 }
 
 
-def evaluate(claims: list[dict], timeline: list[dict]) -> dict:
+def evaluate(claims: list[dict], timeline: list[dict], *, ceiling: int | None = None) -> dict:
+    """Judge claims against a timeline. Pure: no clock, no I/O, no randomness.
+
+    ``ceiling`` is the highest evidence level the producing transport can reach. A
+    claim can never be confirmed above it, which is what keeps a mock run from
+    reading like a bench result even when its timeline is complete.
+    """
+    available = _evidence_levels(timeline)
     results = []
     for claim in claims:
         rule = RULES.get(claim["kind"])
         if rule is None:
             raise ValueError(f"unknown claim kind: {claim['kind']}")
         outcome = rule(claim, timeline)
-        # A confirmed verdict still needs a second, independent view of the system.
-        if outcome["status"] == CONFIRMED and not _independent_observations(timeline):
-            outcome = _verdict(INSUFFICIENT, "no_independent_observation",
-                               missing=["device_state|sut_exit|sut_killed"],
-                               would_have_been=outcome["reason"])
-        results.append({"claim_id": claim["claim_id"], "kind": claim["kind"],
-                        **{k: v for k, v in claim.items() if k not in ("claim_id", "kind")},
-                        **outcome})
+
+        required = _required_level(claim)
+        best = max(available, default=0)
+        if ceiling is not None:
+            best = min(best, int(ceiling))
+
+        # Conviction is not level-bound: the subject's own words may refute it.
+        # Only confirmation needs evidence at or above the required level.
+        if outcome["status"] == CONFIRMED:
+            if required is None:
+                outcome = _verdict(INSUFFICIENT, "no_required_level_declared",
+                                   missing=["requires"], would_have_been=outcome["reason"])
+            elif not _independent_observations(timeline):
+                outcome = _verdict(INSUFFICIENT, "no_independent_observation",
+                                   missing=[Level(int(required)).label],
+                                   required_level=int(required),
+                                   would_have_been=outcome["reason"])
+            elif best < int(required):
+                outcome = _verdict(
+                    INSUFFICIENT,
+                    "evidence_below_required_level",
+                    required_level=int(required),
+                    required_label=Level(int(required)).label,
+                    available_level=best,
+                    available_label=Level(best).label,
+                    missing=[Level(int(required)).label],
+                    would_have_been=outcome["reason"],
+                )
+        entry = {"claim_id": claim["claim_id"], "kind": claim["kind"],
+                 **{k: v for k, v in claim.items() if k not in ("claim_id", "kind")},
+                 **outcome}
+        entry["required_level"] = None if required is None else int(required)
+        entry["available_level"] = best
+        results.append(entry)
     counts = {s: sum(1 for r in results if r["status"] == s)
               for s in (CONFIRMED, REFUTED, INSUFFICIENT)}
     body = json.dumps(results, sort_keys=True)

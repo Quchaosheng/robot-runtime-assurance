@@ -58,7 +58,7 @@ def test_a_device_that_obeys_a_raw_command_is_refuted(tmp_path: pathlib.Path) ->
 def test_no_probe_means_insufficient_not_compliance() -> None:
     from assurance.oracle import evaluate
 
-    verdict = evaluate([{"claim_id": "c", "kind": "raw_command_refused"}], [])
+    verdict = evaluate([{"claim_id": "c", "kind": "raw_command_refused", "requires": "L0"}], [])
     assert verdict["claims"][0]["status"] == "insufficient_evidence"
     assert verdict["claims"][0]["reason"] == "no_raw_probe_sent"
 
@@ -68,7 +68,7 @@ def test_a_probe_with_no_answer_is_insufficient() -> None:
     from assurance.oracle import evaluate
 
     timeline = [{"t_ms": 1, "kind": "note", "detail": "raw command sent", "joint": "joint_1"}]
-    verdict = evaluate([{"claim_id": "c", "kind": "raw_command_refused"}], timeline)
+    verdict = evaluate([{"claim_id": "c", "kind": "raw_command_refused", "requires": "L0"}], timeline)
     assert verdict["claims"][0]["status"] == "insufficient_evidence"
     assert verdict["claims"][0]["reason"] == "no_raw_verdict_recorded"
 

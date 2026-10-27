@@ -25,7 +25,9 @@
   "claims": [
     {
       "claim_id": "I2-raw-command-refused",
-      "kind": "raw_command_refused"
+      "kind": "raw_command_refused",
+      "requires": "L0",
+      "invariant": "I2"
     }
   ],
   "expect_verdict": "pass"

@@ -27,13 +27,15 @@
       "claim_id": "I4I5-stop-acked-over-dds",
       "kind": "cancel_then_stop",
       "task_id": "T1",
-      "invariant": "I4"
+      "invariant": "I4",
+      "requires": "L0"
     },
     {
       "claim_id": "I8-no-false-success",
       "kind": "no_false_success",
       "task_id": "T1",
-      "invariant": "I8"
+      "invariant": "I8",
+      "requires": "L0"
     }
   ],
   "expect_verdict": "pass"

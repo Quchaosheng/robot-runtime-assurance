@@ -36,7 +36,9 @@
     {
       "claim_id": "I3-conflict-rejected",
       "kind": "conflict_rejected",
-      "task_id": "T2"
+      "task_id": "T2",
+      "requires": "L0",
+      "invariant": "I3"
     }
   ],
   "expect_verdict": "refute"

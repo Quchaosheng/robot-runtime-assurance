@@ -388,9 +388,15 @@ def fault_coverage(scenario: dict, timeline: Timeline) -> list[dict]:
 
 def _finish(scenario: dict, timeline: Timeline, out_dir, transport_started: bool) -> dict:
     from .evidence import write_bundle
+    from .levels import ceiling_for, is_simulated
     from .oracle import evaluate
 
-    verdict = evaluate(scenario["claims"], timeline.events)
+    # The transport's ceiling caps what any claim may be confirmed by, so a mock run
+    # cannot read like a bench result even if its timeline looks complete.
+    verdict = evaluate(scenario["claims"], timeline.events, ceiling=int(ceiling_for(scenario["transport"])))
+    verdict["transport"] = scenario["transport"]
+    verdict["evidence_ceiling"] = int(ceiling_for(scenario["transport"]))
+    verdict["simulated"] = is_simulated(scenario["transport"])
     coverage = fault_coverage(scenario, timeline)
     unexercised = [c for c in coverage if not c["exercised"]]
     if not transport_started:

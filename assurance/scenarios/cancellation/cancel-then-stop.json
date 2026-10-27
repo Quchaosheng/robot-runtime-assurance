@@ -26,17 +26,23 @@
     {
       "claim_id": "I4-stop-sent",
       "kind": "cancel_then_stop",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I4"
     },
     {
       "claim_id": "I5-stop-acked",
       "kind": "terminal_state",
-      "expect_state": "idle"
+      "expect_state": "idle",
+      "requires": "L0",
+      "invariant": "I5"
     },
     {
       "claim_id": "I8-evidence-complete",
       "kind": "no_false_success",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I8"
     }
   ],
   "expect_verdict": "pass"

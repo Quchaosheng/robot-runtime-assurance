@@ -23,7 +23,8 @@
       "claim_id": "I8-terminal-state-unobservable",
       "kind": "terminal_state",
       "invariant": "I8",
-      "expect_state": "idle"
+      "expect_state": "idle",
+      "requires": "L0"
     }
   ],
   "expect_verdict": "insufficient"

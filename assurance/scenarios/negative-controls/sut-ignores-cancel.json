@@ -28,7 +28,9 @@
     {
       "claim_id": "I4-stop-sent",
       "kind": "cancel_then_stop",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I4"
     }
   ],
   "expect_verdict": "refute"

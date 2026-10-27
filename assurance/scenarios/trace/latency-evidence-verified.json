@@ -18,7 +18,9 @@
     {
       "claim_id": "I9-trace-digests",
       "kind": "trace_artifact_verified",
-      "min_accepted_count": 1
+      "min_accepted_count": 1,
+      "requires": "L1",
+      "invariant": "I8"
     }
   ],
   "expect_verdict": "insufficient"

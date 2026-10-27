@@ -1,0 +1,67 @@
+{
+  "specification": "workbench-mobile-home-robot:docs/architecture/mcu-wire-v1.md",
+  "source": "firmware/mcu/tests/frame_codec_tests.c golden_vectors[] and interfaces/examples/mcu-frame-stop-ack.json",
+  "note": "These bytes are copied from the system under test's committed tests, not produced by this repository's encoder. That is the point: a vector this repo generated could only prove self-consistency.",
+  "vectors": [
+    {
+      "name": "command/heartbeat-max-id",
+      "arbitration_id": 256,
+      "data": "10 7f ff 06 ff 00 00 00",
+      "frame": {"kind": "COMMAND", "command_id": 32767, "opcode": "HEARTBEAT", "retry_count": 255}
+    },
+    {
+      "name": "ack/hold-accepted",
+      "arbitration_id": 257,
+      "data": "10 00 13 04 01 00 00 02",
+      "frame": {
+        "kind": "ACK", "command_id": 19, "opcode": "HOLD", "retry_count": 1,
+        "result_code": "ACCEPTED", "fault_code": "NONE", "device_mode": "HOLDING"
+      }
+    },
+    {
+      "name": "ack/grip-close-malformed",
+      "arbitration_id": 257,
+      "data": "10 00 14 03 00 01 07 04",
+      "frame": {
+        "kind": "ACK", "command_id": 20, "opcode": "GRIP_CLOSE",
+        "result_code": "REJECTED", "fault_code": "MALFORMED_FRAME", "device_mode": "FAULTED"
+      }
+    },
+    {
+      "name": "telemetry/wrapped-idle",
+      "arbitration_id": 384,
+      "data": "10 ff ff ff ff 00 00 00",
+      "frame": {"kind": "TELEMETRY", "sequence_no": 4294967295, "fault_code": "NONE", "device_mode": "IDLE"}
+    },
+    {
+      "name": "telemetry/watchdog-expired",
+      "arbitration_id": 384,
+      "data": "10 00 00 00 00 06 04 00",
+      "frame": {"kind": "TELEMETRY", "sequence_no": 0, "fault_code": "WATCHDOG_EXPIRED", "device_mode": "FAULTED"}
+    },
+    {
+      "name": "stop/first-stop-id",
+      "arbitration_id": 128,
+      "data": "10 80 00 05 00 00 00 00",
+      "frame": {"kind": "STOP", "command_id": 32768, "opcode": "STOP"}
+    },
+    {
+      "name": "stop_ack/committed-example",
+      "arbitration_id": 129,
+      "data": "10 80 01 05 00 00 00 03",
+      "frame": {
+        "kind": "STOP_ACK", "command_id": 32769, "opcode": "STOP",
+        "result_code": "ACCEPTED", "fault_code": "NONE", "device_mode": "STOPPED"
+      }
+    },
+    {
+      "name": "stop_ack/rejected-faulted",
+      "arbitration_id": 129,
+      "data": "10 ff ff 05 02 01 03 04",
+      "frame": {
+        "kind": "STOP_ACK", "command_id": 65535, "opcode": "STOP", "retry_count": 2,
+        "result_code": "REJECTED", "fault_code": "STOP_REJECTED", "device_mode": "FAULTED"
+      }
+    }
+  ]
+}

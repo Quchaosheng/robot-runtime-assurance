@@ -21,22 +21,30 @@
     {
       "claim_id": "I1-scenario-registered",
       "kind": "registered_scenario",
-      "scenario_ref": "nominal/normal-task"
+      "scenario_ref": "nominal/normal-task",
+      "requires": "L1",
+      "invariant": "I1"
     },
     {
       "claim_id": "I3-claim-granted",
       "kind": "no_false_success",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I8"
     },
     {
       "claim_id": "I6-ack-belongs-to-task",
       "kind": "ack_matches_task",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I6"
     },
     {
       "claim_id": "I7-ends-idle",
       "kind": "terminal_state",
-      "expect_state": "idle"
+      "expect_state": "idle",
+      "requires": "L0",
+      "invariant": "I5"
     }
   ],
   "expect_verdict": "pass"

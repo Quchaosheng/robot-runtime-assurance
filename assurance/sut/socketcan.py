@@ -10,13 +10,12 @@ The design rule this file follows: **the transport reports availability from a r
 socket probe, never from a config flag.** A run on a host without an interface
 returns `insufficient_evidence` with the reason, which is the truthful outcome.
 
-Wire format is the one the reference robot already uses, so this adapter keeps the
-same meaning as the device side rather than inventing a second protocol:
-
-  arbitration id 0x100  command   data[0]=opcode, data[1:3]=command id (big endian)
-  arbitration id 0x101  ack       data[1:3]=command id, data[3]=result
-  arbitration id 0x102  stop      data[1:3]=command id
-  arbitration id 0x103  stop ack  data[1:3]=command id
+Wire format comes from `assurance.wire.mcu_wire_v1`, which is written from the
+system under test's own specification and cross-checked against its committed byte
+vectors. An earlier version of this module invented a layout (`0x102` for STOP,
+opcode in byte 0 where the protocol requires a version byte) and its tests only ever
+encoded and decoded with itself, so nothing could notice. Test vectors now come from
+the firmware, not from here.
 """
 
 from __future__ import annotations
@@ -29,18 +28,23 @@ from typing import Any
 
 from ..timeline import Timeline
 from ..transports import TransportError
+from ..wire.mcu_wire_v1 import (
+    Frame,
+    FrameKind,
+    Opcode,
+    WireError,
+    decode,
+    stop_command,
+)
+from ..wire.mcu_wire_v1 import (
+    encode as encode_frame,
+)
 
 CAN_IFACE = os.environ.get("ASSURANCE_CAN_IFACE", "vcan0")
-CAN_ID_COMMAND = 0x100
-CAN_ID_ACK = 0x101
-CAN_ID_STOP = 0x102
-CAN_ID_STOP_ACK = 0x103
 
-OP_START = 0x01
-OP_CANCEL = 0x02
-
-RESULT_OK = 0x00
-RESULT_REJECTED = 0x01
+# Ordinary traffic and STOP traffic use different opcodes and different id ranges;
+# this transport only ever needs to issue an ordinary local-motion command or a STOP.
+OP_MOVE = Opcode.MOVE
 
 
 def interface_present(iface: str = CAN_IFACE) -> tuple[bool, str]:
@@ -116,16 +120,27 @@ class SocketCanTransport:
             raise TransportError(f"send on {self.iface} failed: {error}") from error
 
     def send(self, *parts: object) -> None:
+        """Issue one command. Exactly one frame leaves per call.
+
+        The previous version also wrote a STOP frame after every ordinary command.
+        That is worse than noise: an observer would read a stop on the bus and
+        conclude the machine halted when it did not.
+        """
         op = str(parts[0])
         task_id = str(parts[1]) if len(parts) > 1 else ""
-        self.command_id = (self.command_id + 1) & 0xFFFF
+        if op == "stop":
+            self.command_id = 0x8000 | ((self.command_id + 1) & 0x7FFF)
+            arbitration_id, data = stop_command(self.command_id)
+        else:
+            self.command_id = (self.command_id + 1) & 0x7FFF
+            arbitration_id, data = encode_frame(
+                Frame(kind=FrameKind.COMMAND, command_id=self.command_id, opcode=OP_MOVE)
+            )
         # Remember which task a command id belongs to. Without this the ACK for
         # command 7 could be attributed to whichever task happens to be in flight,
         # which is the contamination I6 exists to prevent.
         self.pending[self.command_id] = task_id
-        opcode = OP_START if op == "start" else OP_CANCEL
-        self._frame(CAN_ID_COMMAND, bytes([opcode]) + struct.pack(">H", self.command_id))
-        self._frame(CAN_ID_STOP, b"\x00" + struct.pack(">H", self.command_id))
+        self._frame(arbitration_id, data)
 
     def drain(self, timeline: Timeline, until_ms: int = 0) -> None:
         if self.sock is None:
@@ -158,19 +173,37 @@ class SocketCanTransport:
         return self.pending.get(command_id, f"can-uncorrelated:{command_id}")
 
     def _record(self, can_id: int, data: bytes, timeline: Timeline) -> None:
+        """Translate one bus frame into a timeline event.
+
+        A frame the codec refuses is recorded as an observation, never dropped: an
+        unparseable frame on the bus is a finding about the device, and silence about
+        it would read as a quiet bus.
+        """
         can_id &= socket.CAN_SFF_MASK if hasattr(socket, "CAN_SFF_MASK") else 0x7FF
-        if can_id == CAN_ID_ACK and len(data) >= 4:
-            command_id = int.from_bytes(data[1:3], "big")
-            accepted = data[3] == RESULT_OK
-            timeline.add("ack", task_id=self._task_for(command_id),
-                         status="done" if accepted else "rejected",
-                         command_id=command_id, can_id=can_id)
-        elif can_id == CAN_ID_STOP_ACK and len(data) >= 3:
-            command_id = int.from_bytes(data[1:3], "big")
-            timeline.add("stop_ack", task_id=self._task_for(command_id), command_id=command_id)
+        try:
+            frame = decode(can_id, data)
+        except WireError as error:
+            timeline.add("note", detail="undecodable can frame", can_id=can_id,
+                         payload=data.hex(), reason=str(error))
+            return
+        if frame.kind is FrameKind.ACK:
+            from ..wire.mcu_wire_v1 import Result
+
+            timeline.add("ack", task_id=self._task_for(frame.command_id),
+                         status="done" if frame.result_code is Result.ACCEPTED else "rejected",
+                         command_id=frame.command_id, can_id=can_id,
+                         device_mode=frame.device_mode.name.lower())
+        elif frame.kind is FrameKind.STOP_ACK:
+            timeline.add("stop_ack", task_id=self._task_for(frame.command_id),
+                         command_id=frame.command_id, can_id=can_id,
+                         device_mode=frame.device_mode.name.lower())
+        elif frame.kind is FrameKind.TELEMETRY:
+            timeline.add("device_state", state=frame.device_mode.name.lower(),
+                         sequence_no=frame.sequence_no, fault=frame.fault_code.name.lower(),
+                         can_id=can_id)
         else:
-            timeline.add("note", detail="unexpected can frame", can_id=can_id,
-                         payload=data.hex())
+            timeline.add("note", detail="unexpected can frame kind", can_id=can_id,
+                         kind=frame.kind.name)
 
 
 def decode_frame(frame: bytes) -> dict[str, Any]:

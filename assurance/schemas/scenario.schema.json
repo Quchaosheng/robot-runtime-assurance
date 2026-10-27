@@ -135,7 +135,8 @@
         "type": "object",
         "required": [
           "claim_id",
-          "kind"
+          "kind",
+          "requires"
         ],
         "additionalProperties": false,
         "properties": {
@@ -191,6 +192,19 @@
           "min_accepted_count": {
             "type": "integer",
             "minimum": 0
+          },
+          "requires": {
+            "enum": [
+              "L0",
+              "L1",
+              "L2",
+              "L3",
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "evidence level this claim needs before it may be confirmed"
           }
         }
       }

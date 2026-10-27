@@ -28,13 +28,15 @@
       "claim_id": "I8-no-false-success",
       "kind": "no_false_success",
       "task_id": "T1",
-      "invariant": "I8"
+      "invariant": "I8",
+      "requires": "L0"
     },
     {
       "claim_id": "I7-ends-idle",
       "kind": "terminal_state",
       "expect_state": "idle",
-      "invariant": "I7"
+      "invariant": "I7",
+      "requires": "L0"
     }
   ],
   "expect_verdict": "pass"

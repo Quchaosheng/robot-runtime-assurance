@@ -26,12 +26,16 @@
     {
       "claim_id": "I5-stop-acked",
       "kind": "cancel_then_stop",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I4"
     },
     {
       "claim_id": "I8-no-false-success",
       "kind": "no_false_success",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I8"
     }
   ],
   "expect_verdict": "pass"

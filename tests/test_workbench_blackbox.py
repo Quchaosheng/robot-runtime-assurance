@@ -104,7 +104,7 @@ def test_a_bundle_published_after_the_kill_is_a_refutation() -> None:
         {"t_ms": 11, "kind": "note", "detail": "post-kill leftovers",
          "published": ["normal-001-deadbeef"], "partial": []},
     ]
-    verdict = evaluate([{"claim_id": "c", "kind": "kill_observed"}], timeline)
+    verdict = evaluate([{"claim_id": "c", "kind": "kill_observed", "requires": "L1"}], timeline)
     assert verdict["claims"][0]["status"] == "refuted"
     assert verdict["claims"][0]["reason"] == "bundle_published_after_kill"
 
@@ -120,7 +120,7 @@ def test_a_subject_self_report_is_never_an_independent_observation() -> None:
         {"t_ms": 3, "kind": "device_state", "task_id": "T1", "state": "idle",
          "requested": True, "subject_claim": True},
     ]
-    verdict = evaluate([{"claim_id": "c", "kind": "ack_matches_task", "task_id": "T1"}], timeline)
+    verdict = evaluate([{"claim_id": "c", "kind": "ack_matches_task", "task_id": "T1", "requires": "L0"}], timeline)
     assert verdict["claims"][0]["status"] == "insufficient_evidence"
     assert verdict["claims"][0]["reason"] == "no_independent_observation"
 

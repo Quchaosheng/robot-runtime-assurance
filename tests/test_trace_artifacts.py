@@ -58,12 +58,12 @@ def write_artifact(root: pathlib.Path, *, extra_line: str = "") -> tuple[pathlib
 
 def test_a_matching_artifact_is_confirmed() -> None:
     timeline = [{
-        "t_ms": 1, "kind": "trace_verified", "requested": True,
+        "t_ms": 1, "kind": "trace_verified", "level": 1,
         "accepted_count": 1, "digests": [
             {"field": "runtime_normalized_sha256", "status": "match"},
         ],
     }]
-    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified"}], timeline)
+    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified", "requires": "L1"}], timeline)
     assert verdict["claims"][0]["status"] == "confirmed"
     assert verdict["claims"][0]["reason"] == "trace_digests_verified"
 
@@ -76,9 +76,9 @@ def test_an_edited_artifact_is_refuted(tmp_path: pathlib.Path) -> None:
     digests = verify_digests(loaded, {"runtime_normalized_sha256": events})
     assert digests[0]["status"] == "mismatch"
 
-    timeline = [{"t_ms": 1, "kind": "trace_verified", "requested": True,
+    timeline = [{"t_ms": 1, "kind": "trace_verified", "level": 1,
                  "accepted_count": 1, "digests": digests}]
-    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified"}], timeline)
+    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified", "requires": "L1"}], timeline)
     assert verdict["claims"][0]["status"] == "refuted"
     assert verdict["claims"][0]["reason"] == "trace_digest_mismatch"
 
@@ -89,25 +89,25 @@ def test_an_unchecked_digest_is_never_reported_as_ok(tmp_path: pathlib.Path) -> 
     digests = verify_digests(loaded, {})
     assert digests[0]["status"] == "not_checked"
 
-    timeline = [{"t_ms": 1, "kind": "trace_verified", "requested": True,
+    timeline = [{"t_ms": 1, "kind": "trace_verified", "level": 1,
                  "accepted_count": 1, "digests": digests}]
-    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified"}], timeline)
+    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified", "requires": "L1"}], timeline)
     assert verdict["claims"][0]["status"] == "insufficient_evidence"
     assert verdict["claims"][0]["reason"] == "no_digest_could_be_checked"
 
 
 def test_a_missing_artifact_is_insufficient_not_a_pass() -> None:
-    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified"}], [])
+    verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified", "requires": "L1"}], [])
     assert verdict["claims"][0]["status"] == "insufficient_evidence"
     assert verdict["claims"][0]["reason"] == "no_trace_artifact"
 
 
 def test_a_below_threshold_accepted_count_is_refuted() -> None:
-    timeline = [{"t_ms": 1, "kind": "trace_verified", "requested": True,
+    timeline = [{"t_ms": 1, "kind": "trace_verified", "level": 1,
                  "accepted_count": 3,
                  "digests": [{"field": "runtime_normalized_sha256", "status": "match"}]}]
     verdict = evaluate([{"claim_id": "c", "kind": "trace_artifact_verified",
-                         "min_accepted_count": 10}], timeline)
+                         "requires": "L1", "min_accepted_count": 10}], timeline)
     assert verdict["claims"][0]["status"] == "refuted"
     assert verdict["claims"][0]["reason"] == "trace_accepted_below_threshold"
 

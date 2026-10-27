@@ -17,6 +17,7 @@ Anything else - a mismatch, an unreadable result - exits non-zero.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
 import sys
 
@@ -65,6 +66,23 @@ def main() -> int:
         else:
             print(f"OK       {scenario}")
     total = len(shipped_scenarios())
+
+    # The README carries the generated matrix. A stale table is a stale claim, so it
+    # is checked here rather than trusted to a reviewer's memory.
+    readme = (pathlib.Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    matrix = subprocess.run(
+        [sys.executable, "-m", "assurance.cli", "matrix"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    stale = [line for line in matrix.splitlines() if line.startswith("| ") and line not in readme]
+    if stale:
+        print(f"MATRIX STALE: {len(stale)} row(s) of the README matrix do not match")
+        for line in stale[:5]:
+            print("  " + line)
+        failures += 1
+    else:
+        print("MATRIX OK  README table matches the register")
+
     print(f"\n{total} scenarios, {failures} mismatch(es), {blocked} blocked")
     return 1 if failures else 0
 

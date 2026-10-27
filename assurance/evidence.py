@@ -89,7 +89,11 @@ def verify_bundle(path: str | pathlib.Path) -> dict:
     scenario = json.loads((root / "deterministic" / "scenario.json").read_text())
     timeline = json.loads((root / "deterministic" / "timeline.json").read_text())
     stored = json.loads((root / "deterministic" / "verdict.json").read_text())
-    replayed = evaluate(scenario["claims"], timeline)
+    # The ceiling is part of the verdict, so a third party replaying this bundle must
+    # use the same one. Reading it from the stored verdict rather than recomputing it
+    # keeps the replay honest: if the stored ceiling was wrong, the digests differ.
+    ceiling = stored.get("evidence_ceiling")
+    replayed = evaluate(scenario["claims"], timeline, ceiling=ceiling)
     return {
         "ok": not bad and replayed["digest"] == stored["digest"],
         "checksums_bad": bad,

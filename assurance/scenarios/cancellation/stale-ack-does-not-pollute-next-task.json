@@ -35,12 +35,16 @@
     {
       "claim_id": "I6-B-not-confirmed-by-A",
       "kind": "ack_matches_task",
-      "task_id": "B"
+      "task_id": "B",
+      "requires": "L0",
+      "invariant": "I6"
     },
     {
       "claim_id": "I8-no-false-success-A",
       "kind": "no_false_success",
-      "task_id": "A"
+      "task_id": "A",
+      "requires": "L0",
+      "invariant": "I8"
     }
   ],
   "expect_verdict": "refute"

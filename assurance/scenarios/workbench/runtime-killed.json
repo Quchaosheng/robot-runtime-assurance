@@ -24,7 +24,9 @@
   "claims": [
     {
       "claim_id": "I7-kill-observed-no-ack-or-bundle",
-      "kind": "kill_observed"
+      "kind": "kill_observed",
+      "requires": "L1",
+      "invariant": "I7"
     }
   ],
   "expect_verdict": "pass"

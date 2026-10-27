@@ -37,6 +37,10 @@ select = ["F", "E", "W", "I", "B", "SIM", "PERF", "RUF"]
 ignore = [
   # Long single-expression asserts read better than a wrapped one.
   "E501",
+  # The generated matrix and the operator-facing strings are Chinese.
+  "RUF001",
+  "RUF002",
+  "RUF003",
   # Tests import the package after skipping on an optional dependency.
   "E402",
   # A list comprehension is not clearer than the loop in the evidence writer.

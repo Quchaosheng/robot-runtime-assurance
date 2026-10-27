@@ -10,14 +10,21 @@ from assurance.oracle import CONFIRMED, INSUFFICIENT, REFUTED, evaluate
 
 
 def verdict(claims, timeline):
-    return evaluate(claims, timeline)
+    """Judge claims, defaulting `requires` to L0.
+
+    These cases are about the *claim rules*, not about evidence levels. Level
+    behaviour has its own file (tests/test_levels.py) so a change to one does not
+    silently rewrite the expectations of the other.
+    """
+    annotated = [{**claim, "requires": claim.get("requires", "L0")} for claim in claims]
+    return evaluate(annotated, timeline)
 
 
 def test_clean_run_confirms_everything():
     timeline = [
         {"t_ms": 0, "kind": "task_start", "task_id": "A", "epoch": 1, "expect": "done"},
         {"t_ms": 5, "kind": "ack", "task_id": "A", "epoch": 1, "status": "done"},
-        {"t_ms": 6, "kind": "device_state", "state": "idle"},
+        {"t_ms": 6, "kind": "device_state", "state": "idle", "level": 1},
     ]
     result = verdict([{"claim_id": "c", "kind": "ack_matches_task", "task_id": "A"}], timeline)
     assert result["claims"][0]["status"] == CONFIRMED
@@ -68,7 +75,7 @@ def test_cancel_without_stop_refutes_i4():
     timeline = [
         {"t_ms": 0, "kind": "task_start", "task_id": "A", "epoch": 1},
         {"t_ms": 5, "kind": "cancel_sent", "task_id": "A"},
-        {"t_ms": 6, "kind": "device_state", "state": "idle"},
+        {"t_ms": 6, "kind": "device_state", "state": "idle", "level": 1},
     ]
     result = verdict([{"claim_id": "c", "kind": "cancel_then_stop", "task_id": "A"}], timeline)
     assert result["claims"][0]["status"] == REFUTED
@@ -143,7 +150,7 @@ def test_verdict_is_replayable_from_its_own_files(tmp_path):
     timeline = [
         {"t_ms": 0, "kind": "task_start", "task_id": "A", "epoch": 1, "expect": "done"},
         {"t_ms": 5, "kind": "ack", "task_id": "A", "epoch": 1, "status": "done"},
-        {"t_ms": 6, "kind": "device_state", "state": "idle"},
+        {"t_ms": 6, "kind": "device_state", "state": "idle", "level": 1},
     ]
     scenario = {"scenario_id": "unit/example", "seed": 1, "transport": "mock",
                 "tasks": [{"task_id": "A", "epoch": 1, "resource": "r", "deadline_ms": 10}],

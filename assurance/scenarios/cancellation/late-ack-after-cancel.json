@@ -30,12 +30,16 @@
       "claim_id": "I6-late-ack-recorded",
       "kind": "late_ack_recorded",
       "task_id": "T1",
-      "min_delay_ms": 400
+      "min_delay_ms": 400,
+      "requires": "L0",
+      "invariant": "I6"
     },
     {
       "claim_id": "I6-late-ack-does-not-complete",
       "kind": "no_late_completion",
-      "task_id": "T1"
+      "task_id": "T1",
+      "requires": "L0",
+      "invariant": "I6"
     }
   ],
   "expect_verdict": "pass"

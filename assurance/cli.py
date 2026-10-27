@@ -51,6 +51,14 @@ def cmd_doctor(_args) -> int:
     for name, ok, why in rows:
         print(f"{name:<{width}}  {'available  ' if ok else 'UNAVAILABLE'}  {why}")
     print()
+    from .levels import TRANSPORT_CEILING, Level
+
+    print()
+    print("evidence ceiling per transport (a claim can never be confirmed above it):")
+    for name in sorted(TRANSPORT_CEILING):
+        ceiling = TRANSPORT_CEILING[name]
+        print(f"  {name:<14} L{int(ceiling)} {Level(ceiling).label.split(' ', 1)[1]}")
+
     from .targets import describe_targets
 
     print()
@@ -61,6 +69,57 @@ def cmd_doctor(_args) -> int:
     print(f"scenarios: {len(registry())} (in {SCENARIO_ROOT})")
     print("A transport marked UNAVAILABLE still runs: the run is recorded and the verdict "
           "comes back insufficient_evidence, never a pass.")
+    return 0
+
+
+def cmd_matrix(args) -> int:
+    """Generate the invariant x evidence-level matrix.
+
+    This table is the project's progress board, so it is generated rather than
+    hand-written: a README table that nobody can re-derive is a claim, not a status.
+
+    A cell is only filled when a scenario both declares that claim and was actually
+    executed for it. "The scenario exists" is not coverage, and a mock run never
+    fills a cell above L1 because its ceiling caps it.
+    """
+    from .levels import Level, ceiling_for
+
+    rows: dict[str, dict[int, str]] = {}
+    for name, path in sorted(registry().items()):
+        scenario = json.loads(path.read_text())
+        transport = scenario["transport"]
+        ceiling = int(ceiling_for(transport))
+        for claim in scenario.get("claims", []):
+            invariant = claim.get("invariant")
+            if not invariant:
+                continue
+            requires = int(Level.parse(claim["requires"]))
+            cell = rows.setdefault(invariant, {})
+            if requires > ceiling:
+                # The scenario asks for evidence its transport cannot produce. That is
+                # a real row of the matrix: it shows what is planned versus reachable.
+                cell[requires] = cell.get(requires, "") or "需更高层 transport"
+            else:
+                cell[requires] = cell.get(requires, "") or f"`{name}`"
+    if getattr(args, "as_json", False):
+        print(json.dumps(
+            {
+                "levels": [level.label for level in Level],
+                "matrix": {inv: {str(lv): sc for lv, sc in cells.items()} for inv, cells in sorted(rows.items())},
+            },
+            ensure_ascii=False,
+            indent=2,
+        ))
+        return 0
+    header = "| 不变量 | " + " | ".join(level.label for level in Level) + " |"
+    print(header)
+    print("| --- | " + " | ".join("---" for _ in Level) + " |")
+    for invariant in sorted(rows):
+        cells = [rows[invariant].get(int(level), "—") for level in Level]
+        print(f"| {invariant} | " + " | ".join(cells) + " |")
+    print()
+    print("单元格里的场景名表示：该场景确实声明了这条不变量，且其 transport 能达到这一级。")
+    print("「需更高层 transport」表示场景已写，但当前传输层产不出这一级证据。")
     return 0
 
 
@@ -151,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("doctor").set_defaults(func=cmd_doctor)
     sub.add_parser("list").set_defaults(func=cmd_list)
+    matrix = sub.add_parser("matrix", help="print the invariant x evidence-level matrix")
+    matrix.add_argument("--json", action="store_true", dest="as_json")
+    matrix.set_defaults(func=cmd_matrix)
     sub.add_parser("selftest").set_defaults(func=cmd_selftest)
 
     run = sub.add_parser("run")

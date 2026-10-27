@@ -15,15 +15,55 @@ KINDS = {
 }
 
 
+# The evidence level each event kind can carry by default. A writer that knows
+# better passes `level=` explicitly; the default exists so an event can never arrive
+# without one, which is how a self-report would otherwise be counted as proof.
+DEFAULT_LEVEL = {
+    # the subject's own word
+    "ack": 0,
+    "rejected": 0,
+    "cancelled": 0,
+    "timeout": 0,
+    "device_state": 0,
+    "task_accepted": 0,
+    "claim_granted": 0,
+    "claim_denied": 0,
+    # observed by the harness itself
+    "sut_killed": 1,
+    "sut_exit": 1,
+    "bundle_verified": 1,
+    "trace_verified": 1,
+    "raw_command": 1,
+    "run_start": 1,
+    "run_end": 1,
+    "note": 0,
+    "task_start": 0,
+    "cancel_sent": 1,
+    "stop_sent": 1,
+    # the bus
+    "stop_ack": 2,
+}
+
+
 class Timeline:
     def __init__(self) -> None:
         self._t0 = time.monotonic()
         self.events: list[dict] = []
 
-    def add(self, kind: str, **fields) -> dict:
+    def add(self, kind: str, level: int | None = None, **fields) -> dict:
         if kind not in KINDS:
             raise ValueError(f"unknown event kind: {kind}")
-        event = {"t_ms": round((time.monotonic() - self._t0) * 1000), "kind": kind, **fields}
+        resolved = DEFAULT_LEVEL.get(kind) if level is None else level
+        if resolved is None:
+            raise ValueError(f"event kind {kind!r} needs an explicit evidence level")
+        if not isinstance(resolved, int) or isinstance(resolved, bool) or not 0 <= resolved <= 3:
+            raise ValueError(f"evidence level must be 0..3, got {resolved!r}")
+        event = {
+            "t_ms": round((time.monotonic() - self._t0) * 1000),
+            "kind": kind,
+            "level": resolved,
+            **fields,
+        }
         self.events.append(event)
         return event
 
