@@ -42,21 +42,34 @@ jobs:
         # one side and the device under test listens on the other. A single interface
         # would let the observer see its own traffic, which is not a bus.
         #
-        # Modules are loaded in dependency order. `vcan` needs the CAN core and the
-        # raw protocol module first; loading it alone fails on a clean runner, which
-        # is how the first version of this job failed.
+        # Modules are loaded in dependency order; `vcan` needs the CAN core and raw
+        # protocol modules first. Every step is captured so a failure reports the
+        # actual error through an annotation, which is readable without the job log.
+        shell: bash
         run: |
-          set -x
-          uname -a
-          sudo modprobe can || true
-          sudo modprobe can_raw || true
-          sudo modprobe can-dev || true
-          sudo modprobe vcan
-          lsmod | grep -E '^(can|vcan)' || true
-          sudo ip link add dev vcan0 type vcan
-          sudo ip link add dev vcan1 type vcan
-          sudo ip link set up vcan0
-          sudo ip link set up vcan1
+          set -u
+          fail() {
+            echo "::error title=vcan setup failed::$1"
+            exit 1
+          }
+          run_step() {
+            local label="$1"; shift
+            local out
+            if ! out=$("$@" 2>&1); then
+              fail "${label}: $(echo "$out" | head -3 | tr '\n' ' ')"
+            fi
+          }
+          echo "kernel: $(uname -r)"
+          for module in can can_raw can-dev vcan; do
+            if ! out=$(sudo modprobe "$module" 2>&1); then
+              echo "::warning title=modprobe ${module}::${out:-no output}"
+            fi
+          done
+          echo "loaded: $(lsmod | grep -E '^(can|vcan)' | awk '{print $1}' | tr '\n' ' ')"
+          run_step "ip link add vcan0" sudo ip link add dev vcan0 type vcan
+          run_step "ip link add vcan1" sudo ip link add dev vcan1 type vcan
+          run_step "ip link set up vcan0" sudo ip link set up vcan0
+          run_step "ip link set up vcan1" sudo ip link set up vcan1
           ip -details link show vcan0
           ip -details link show vcan1
 
