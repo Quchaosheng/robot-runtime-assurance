@@ -95,4 +95,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Any uncaught exception must still name itself in the CI annotation: an
+    # AttributeError once escaped here and the job reported only "exit code 1".
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException as error:
+        print(f"FAIL: unexpected {type(error).__name__}: {error}")
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::error title=L2 bus check crashed::{type(error).__name__}: {error}")
+        raise SystemExit(1) from error

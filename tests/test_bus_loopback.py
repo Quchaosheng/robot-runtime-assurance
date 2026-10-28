@@ -39,9 +39,9 @@ class FakeCanSocket:
     def bind(self, _address) -> None:
         pass
 
-    def recv(self, _size: int) -> bytes:
+    def recvmsg(self, _size: int, _ancbuf: int):
         if self.pending:
-            return self.pending.pop(0)
+            return self.pending.pop(0), [], 0, None
         raise TimeoutError("no more frames")
 
     def close(self) -> None:
@@ -159,3 +159,57 @@ def test_the_socketcan_scenario_degrades_honestly_without_an_interface(tmp_path)
     assert endings and endings[0]["outcome"] == "transport_unavailable", endings
     assert "CAP_NET_ADMIN" in endings[0]["detail"]
     assert not [e for e in timeline if e["kind"] == "bus_frame"], "no frames may be invented"
+
+
+def test_start_survives_a_python_without_so_timestampns(monkeypatch) -> None:
+    """The crash the first CI run of the bus job hit, pinned as a test.
+
+    This interpreter does not expose ``socket.SO_TIMESTAMPNS`` at all, so the original
+    ``setsockopt(socket.SOL_SOCKET, socket.SO_TIMESTAMPNS, 1)`` raised AttributeError
+    inside start(). Every local test missed it because start() calls available() first
+    and this host has no vcan - the failure only appeared on a runner that has one.
+    """
+    import socket as socket_module
+
+    observer = BusObserver("vcan0")
+    monkeypatch.setattr(observer, "available", lambda: (True, "faked"))
+    monkeypatch.delattr(socket_module, "SO_TIMESTAMPNS", raising=False)
+
+    created = {}
+
+    class RecordingSocket(FakeCanSocket):
+        def __init__(self, frames=None):
+            super().__init__(frames or [])
+            created["socket"] = self
+
+        def setsockopt(self, level, option, value):
+            created["option"] = option
+
+        def bind(self, address):
+            created["bind"] = address
+
+    monkeypatch.setattr(socket_module, "socket", lambda *a, **k: RecordingSocket())
+
+    observer.start()  # must not raise
+    assert created["option"] == 35, "the numeric SO_TIMESTAMPNS is used when the name is missing"
+    assert created["bind"] == ("vcan0",)
+    observer.stop()
+
+
+def test_the_frame_records_which_clock_it_came_with() -> None:
+    """A monotonic clock is a different claim from a kernel one; the bundle says which."""
+    observer = BusObserver("vcan0")
+    observer.sock = FakeCanSocket([stop_ack(0x8001)])
+    observer.kernel_timestamps = False
+    timeline = Timeline()
+    observer.drain(until_ms=20)
+    observer.record(timeline)
+    assert timeline.events[0]["clock"] == "monotonic"
+
+    observer2 = BusObserver("vcan0")
+    observer2.sock = FakeCanSocket([stop_ack(0x8001)])
+    observer2.kernel_timestamps = True
+    timeline2 = Timeline()
+    observer2.drain(until_ms=20)
+    observer2.record(timeline2)
+    assert timeline2.events[0]["clock"] == "kernel"

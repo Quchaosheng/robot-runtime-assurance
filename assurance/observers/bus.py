@@ -53,6 +53,8 @@ class BusObserver:
         self.iface = iface
         self.sock: socket.socket | None = None
         self.frames: list[ObservedFrame] = []
+        # False until start() proves the kernel accepted the timestamp request.
+        self.kernel_timestamps = False
 
     # -- availability ------------------------------------------------------
     def available(self) -> tuple[bool, str]:
@@ -75,9 +77,18 @@ class BusObserver:
         if not ok:
             raise OSError(why)
         self.sock = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
-        # Kernel timestamps: the value recorded is when the driver saw the frame, not
-        # when this process got scheduled.
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_TIMESTAMPNS, 1)
+        # Ask the kernel to attach its own receive timestamp to each frame. The constant
+        # is not exposed by every Python build (this one lacks it entirely, and the
+        # unguarded attribute access is what crashed the first CI run of the bus job),
+        # so the value is looked up defensively. SO_TIMESTAMPNS is 35 on Linux.
+        timestamp_option = getattr(socket, "SO_TIMESTAMPNS", 35)
+        try:
+            self.sock.setsockopt(socket.SOL_SOCKET, timestamp_option, 1)
+            self.kernel_timestamps = True
+        except OSError:
+            # Without it the observer still works, but its clock is this process's,
+            # which is a different claim. Recorded so the bundle does not pretend.
+            self.kernel_timestamps = False
         self.sock.bind((self.iface,))
         self.sock.settimeout(0.2)
 
@@ -102,14 +113,14 @@ class BusObserver:
         collected: list[ObservedFrame] = []
         while True:
             try:
-                raw = self.sock.recv(16)
+                raw, stamp_ns = self._receive()
             except (TimeoutError, socket.timeout):
                 if time.monotonic() >= deadline:
                     break
                 continue
             except OSError:
                 break
-            frame = self._parse(raw)
+            frame = self._parse(raw, stamp_ns)
             if frame is not None:
                 collected.append(frame)
                 self.frames.append(frame)
@@ -117,12 +128,36 @@ class BusObserver:
                 break
         return collected
 
-    def _parse(self, raw: bytes) -> ObservedFrame | None:
+    def _receive(self) -> tuple[bytes, int]:
+        """Read one frame and the kernel's receive timestamp, if it sent one.
+
+        ``recvmsg`` is used rather than ``recv`` because the timestamp arrives as
+        ancillary data. Falls back to the process clock when the kernel attached
+        nothing, and the frame records which clock it came with.
+        """
+        if self.sock is None:
+            raise OSError("observer socket is not open")
+        raw, ancillary, _flags, _address = self.sock.recvmsg(16, socket.CMSG_SPACE(16))
+        for level, kind, payload in ancillary:
+            if (
+                level == socket.SOL_SOCKET
+                and kind in (getattr(socket, "SCM_TIMESTAMPNS", -1), 35)
+                and len(payload) >= 16
+            ):
+                seconds, nanos = struct.unpack("=qq", payload[:16])
+                return raw, seconds * 1_000_000_000 + nanos
+        return raw, time.monotonic_ns()
+
+    def _parse(self, raw: bytes, timestamp_ns: int | None = None) -> ObservedFrame | None:
         if len(raw) < 16:
             return None
         can_id, _dlc = struct.unpack("=II", raw[:8])
         data = raw[8:16]
-        frame = ObservedFrame(can_id=can_id & 0x7FF, data=data, timestamp_ns=time.monotonic_ns())
+        frame = ObservedFrame(
+            can_id=can_id & 0x7FF,
+            data=data,
+            timestamp_ns=time.monotonic_ns() if timestamp_ns is None else timestamp_ns,
+        )
         try:
             decoded = decode(frame.can_id, data)
         except WireError as error:
@@ -179,6 +214,7 @@ class BusObserver:
                 can_id=frame.can_id,
                 frame_kind=frame.kind,
                 command_id=frame.command_id,
+                clock="kernel" if self.kernel_timestamps else "monotonic",
                 **frame.detail,
             )
         return len(self.frames)
