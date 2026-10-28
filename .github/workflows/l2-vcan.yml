@@ -37,6 +37,18 @@ jobs:
 
       - run: python -m pip install -e ".[dev]" ruff
 
+      - name: Install the extra kernel modules
+        # The GitHub ubuntu-24.04 image ships the kernel without its extra modules, so
+        # `modprobe vcan` fails with "Module vcan not found in directory
+        # /lib/modules/6.17.0-1022-azure". The system under test's own kernel job
+        # installs `linux-modules-extra-$(uname -r)` for exactly this reason; without
+        # it a bus-level job cannot create a bus at all.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            "linux-modules-extra-$(uname -r)" can-utils
+          modinfo vcan | head -3
+
       - name: Create the virtual CAN interfaces
         # Two interfaces, because the injector sits between them: the harness drives
         # one side and the device under test listens on the other. A single interface
