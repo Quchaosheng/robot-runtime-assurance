@@ -1,19 +1,22 @@
 # L2: bus-level acceptance on a virtual CAN bus.
 #
 # This job exists because a claim about what reached the device cannot be judged from
-# the host's own process. It needs a bus, and GitHub runners can provide one:
-# `sudo modprobe vcan && sudo ip link add ... type vcan` works there, as the system
-# under test's own CI already demonstrates.
+# the host's own process. It needs a bus.
 #
-# What it proves and what it does not:
+# A virtual CAN bus needs the vcan kernel module, and whether a runner has it is not
+# something this repository controls. GitHub's ubuntu-24.04 image ships the kernel
+# without its extra modules, so `modprobe vcan` answers "Module vcan not found in
+# directory /lib/modules/<release>". Two rounds of this job failed that way before the
+# annotation named it.
 #
-#   proves   a STOP frame reached the bus and the device answered it, with kernel
-#            timestamps and a listener that cannot transmit
-#   does not prove   physical latency. vcan timings are scheduling artefacts; only the
-#            ordering of frames is judged here, never a millisecond budget.
+# So the setup is a **preflight**, and the bus job runs only when a bus really exists:
 #
-# The negative controls run in the same job: if the injector stops working, the
-# claim that depends on it must stop confirming, and this job would notice.
+#   vcan available      -> the L2 scenarios run and judge real frames
+#   vcan not available  -> the job is SKIPPED, with the reason in the summary
+#
+# A skipped job is visibly not-evidence. That is the honest third state, and it is
+# better than both alternatives: a permanently red job teaches people to ignore the
+# workflow, and a green job that observed nothing is a false pass.
 
 name: l2-vcan
 
@@ -26,7 +29,68 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    outputs:
+      vcan: ${{ steps.probe.outputs.vcan }}
+    steps:
+      - name: Try to make a virtual CAN bus
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          attempt() {
+            local label="$1"; shift
+            if out=$("$@" 2>&1); then
+              echo "ok: $label"
+              return 0
+            fi
+            echo "::notice title=${label}::$(echo "$out" | head -2 | tr '\n' ' ')"
+            return 1
+          }
+
+          echo "kernel: $(uname -r)"
+          # The extra-modules package name differs between generic and cloud kernels.
+          sudo apt-get update -qq || true
+          for package in \
+            "linux-modules-extra-$(uname -r)" \
+            "linux-modules-extra-azure" \
+            "linux-modules-extra-generic"
+          do
+            attempt "apt install ${package}" sudo apt-get install -y -qq --no-install-recommends "$package" || true
+          done
+
+          for module in can can_raw can-dev vcan; do
+            attempt "modprobe ${module}" sudo modprobe "$module" || true
+          done
+
+          if attempt "ip link add vcan0" sudo ip link add dev vcan0 type vcan; then
+            sudo ip link set up vcan0
+            ip -details link show vcan0
+            echo "vcan=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=L2 not executed::this runner cannot create a vcan interface, so the bus-level job will be skipped. The reason is in the notices above."
+            echo "vcan=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record the outcome
+        run: |
+          {
+            echo "### L2 bus-level acceptance"
+            if [ "${{ steps.probe.outputs.vcan }}" = "true" ]; then
+              echo "vcan is available on this runner; the bus-level scenarios will run."
+            else
+              echo "**Skipped: this runner cannot create a vcan interface.**"
+              echo ""
+              echo "The L2 scenarios were not executed. This is not a pass — the"
+              echo "invariant rows they cover stay \`insufficient_evidence\` until a"
+              echo "runner with the vcan module runs them."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   bus-level:
+    needs: preflight
+    if: needs.preflight.outputs.vcan == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -37,59 +101,19 @@ jobs:
 
       - run: python -m pip install -e ".[dev]" ruff
 
-      - name: Install the extra kernel modules
-        # The GitHub ubuntu-24.04 image ships the kernel without its extra modules, so
-        # `modprobe vcan` fails with "Module vcan not found in directory
-        # /lib/modules/6.17.0-1022-azure". The system under test's own kernel job
-        # installs `linux-modules-extra-$(uname -r)` for exactly this reason; without
-        # it a bus-level job cannot create a bus at all.
+      - name: Create the second interface
+        # The injector needs both sides: the harness drives one, the device listens on
+        # the other. A single interface would let the observer see its own traffic,
+        # which is not a bus.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            "linux-modules-extra-$(uname -r)" can-utils
-          modinfo vcan | head -3
-
-      - name: Create the virtual CAN interfaces
-        # Two interfaces, because the injector sits between them: the harness drives
-        # one side and the device under test listens on the other. A single interface
-        # would let the observer see its own traffic, which is not a bus.
-        #
-        # Modules are loaded in dependency order; `vcan` needs the CAN core and raw
-        # protocol modules first. Every step is captured so a failure reports the
-        # actual error through an annotation, which is readable without the job log.
-        shell: bash
-        run: |
-          set -u
-          fail() {
-            echo "::error title=vcan setup failed::$1"
-            exit 1
-          }
-          run_step() {
-            local label="$1"; shift
-            local out
-            if ! out=$("$@" 2>&1); then
-              fail "${label}: $(echo "$out" | head -3 | tr '\n' ' ')"
-            fi
-          }
-          echo "kernel: $(uname -r)"
-          for module in can can_raw can-dev vcan; do
-            if ! out=$(sudo modprobe "$module" 2>&1); then
-              echo "::warning title=modprobe ${module}::${out:-no output}"
-            fi
-          done
-          echo "loaded: $(lsmod | grep -E '^(can|vcan)' | awk '{print $1}' | tr '\n' ' ')"
-          run_step "ip link add vcan0" sudo ip link add dev vcan0 type vcan
-          run_step "ip link add vcan1" sudo ip link add dev vcan1 type vcan
-          run_step "ip link set up vcan0" sudo ip link set up vcan0
-          run_step "ip link set up vcan1" sudo ip link set up vcan1
-          ip -details link show vcan0
+          sudo ip link add dev vcan1 type vcan
+          sudo ip link set up vcan1
           ip -details link show vcan1
 
       - name: Confirm the observer can actually see a frame
         # A bus-level job that silently observed nothing would pass every claim with
-        # `insufficient` and look like infrastructure, not evidence. This step sends one
-        # frame and requires the listener to read it back, so the job fails loudly if
-        # the setup is wrong.
+        # `insufficient` and look like infrastructure rather than evidence. This step
+        # sends one STOP frame and requires the listener to read it back.
         env:
           ASSURANCE_CAN_IFACE: vcan0
         run: python ci/check_l2_bus.py
