@@ -60,6 +60,40 @@ A budget claim ("p99 under X ms") needs more than one run:
 The number 300 is chosen, not derived from a requirement. Saying so is part of the
 claim.
 
+## What L2 actually observes
+
+`assurance/observers/bus.py` is a second socket on the same interface. It exists
+because a sender reporting what it sent is another claim from the same source, and the
+whole point of L2 is a source the subject does not control.
+
+| Property | How it is guaranteed | How it could fail |
+| --- | --- | --- |
+| never transmits | the class has no `send`, `inject` or equivalent | a future edit adds one — a test asserts it does not |
+| kernel timestamps | `SO_TIMESTAMPNS` is set on the socket | not set → Python's wake-up time, milliseconds off |
+| refuses silently to guess | an undecodable frame is recorded as `invalid`, not dropped | dropped → a malformed device frame reads as a quiet bus |
+
+The five L2 claims: `stop_on_bus` (I4), `stop_ack_on_bus` and `mode_on_bus` (I5),
+`failsafe_on_link_loss` (I7), `stale_ack_ignored` (I6).
+
+Two of them carry a correlation requirement, because presence is not enough:
+
+- `stop_ack_on_bus` requires the ACK's command id to match a STOP id seen on the same
+  bus, **and** the ACK to arrive after that STOP. An ACK for another command is an
+  answer to something else, and treating it as confirmation is the contamination I6
+  exists to prevent.
+- `stale_ack_ignored` requires both halves: the replayed old frame visible on the bus,
+  **and** no completion recorded for the new task. Either alone is consistent with a
+  broken injector.
+
+## What L2 cannot do
+
+**It cannot report physical latency.** On vcan, a frame's timing is the scheduler's,
+not the machine's. The claim record includes `latency_ms` because the arithmetic is
+free and the ordering is real, but no budget may be judged from it. A p99 delay number
+from a virtual bus would be a fabricated number with a decimal point.
+
+That is what L3 is for, and it is why the L3 column is empty rather than approximated.
+
 ## What the matrix means
 
 `python3 -m assurance.cli matrix` prints invariant × level, filled only where a

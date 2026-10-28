@@ -362,6 +362,130 @@ def _no_staging_residue(claim: dict, timeline: list[dict]) -> dict:
                     inspected=len(observations), window_s=window)
 
 
+def _bus_frames(timeline: list[dict]) -> list[dict]:
+    """Only frames an observer watched on the bus. A subject's own account never enters.
+
+    Filtering here rather than at each claim keeps one definition of "L2 evidence" in
+    the module: a claim cannot accidentally count an ACK the subject sent as a frame
+    somebody else saw.
+    """
+    return [e for e in timeline if e["kind"] == "bus_frame" and int(e.get("level", 0)) >= 2]
+
+
+def _stop_on_bus(claim: dict, timeline: list[dict]) -> dict:
+    """I4 at L2: the STOP frame really reached the device side.
+
+    An L0 version of this claim is satisfied by the runtime saying it sent a stop. This
+    one is satisfied only by a frame on the wire, which is the difference between "the
+    software intended to stop" and "the device was told to stop".
+    """
+    frames = _bus_frames(timeline)
+    if not frames:
+        return _verdict(INSUFFICIENT, "no_bus_observation", missing=["bus_frame"])
+    stops = [f for f in frames if str(f.get("frame_kind")) == "STOP" or f.get("can_id") == 0x080]
+    if not stops:
+        return _verdict(REFUTED, "no_stop_frame_on_bus", observed=[f.get("frame_kind") for f in frames][:8])
+    command_id = claim.get("command_id")
+    if command_id is not None:
+        matched = [f for f in stops if f.get("command_id") == command_id]
+        if not matched:
+            return _verdict(REFUTED, "stop_frame_carried_a_different_command_id",
+                            expected=command_id, observed=[f.get("command_id") for f in stops][:5])
+        return _verdict(CONFIRMED, "stop_frame_on_bus", command_id=command_id, t_ms=matched[0]["t_ms"])
+    return _verdict(CONFIRMED, "stop_frame_on_bus", count=len(stops), t_ms=stops[0]["t_ms"])
+
+
+def _stop_ack_on_bus(claim: dict, timeline: list[dict]) -> dict:
+    """I5 at L2: the device answered the stop, and the ids correlate.
+
+    Correlation is the part that matters. A STOP_ACK for a different command id is not
+    a late answer to this stop, it is an answer to something else, and treating it as
+    confirmation is exactly the contamination I6 exists to prevent.
+    """
+    frames = _bus_frames(timeline)
+    if not frames:
+        return _verdict(INSUFFICIENT, "no_bus_observation", missing=["bus_frame"])
+    stops = [f for f in frames if str(f.get("frame_kind")) == "STOP" or f.get("can_id") == 0x080]
+    acks = [f for f in frames if str(f.get("frame_kind")) == "STOP_ACK" or f.get("can_id") == 0x081]
+    if not stops:
+        return _verdict(REFUTED, "no_stop_frame_on_bus")
+    if not acks:
+        return _verdict(INSUFFICIENT, "stop_ack_not_observed", missing=["STOP_ACK frame"])
+    stop_ids = {f.get("command_id") for f in stops}
+    matching = [f for f in acks if f.get("command_id") in stop_ids]
+    if not matching:
+        return _verdict(REFUTED, "stop_ack_ids_do_not_match_any_stop",
+                        stop_ids=sorted(x for x in stop_ids if x is not None),
+                        ack_ids=[f.get("command_id") for f in acks][:5])
+    ack = matching[0]
+    stop = next(f for f in stops if f.get("command_id") == ack.get("command_id"))
+    if ack["t_ms"] < stop["t_ms"]:
+        return _verdict(REFUTED, "stop_ack_predates_its_stop",
+                        stop_t_ms=stop["t_ms"], ack_t_ms=ack["t_ms"])
+    return _verdict(CONFIRMED, "stop_ack_correlates_with_stop",
+                    command_id=ack.get("command_id"), t_ms=ack["t_ms"],
+                    latency_ms=ack["t_ms"] - stop["t_ms"])
+
+
+def _mode_on_bus(claim: dict, timeline: list[dict]) -> dict:
+    """I5 at L2: telemetry says the device left the moving state.
+
+    A mode is a stronger statement than an ACK - it is the device describing itself
+    after the stop - but it is still the device talking, so it confirms the *device
+    reported* a safe mode, never that the machine is still.
+    """
+    frames = [f for f in _bus_frames(timeline) if f.get("can_id") == 0x180 or str(f.get("frame_kind")) == "TELEMETRY"]
+    if not frames:
+        return _verdict(INSUFFICIENT, "no_telemetry_observed", missing=["telemetry frame"])
+    want = claim.get("expect_mode", "stopped")
+    modes = [f.get("device_mode") for f in frames]
+    if want not in modes:
+        return _verdict(REFUTED, "device_mode_never_reached", expected=want, observed=modes[-5:])
+    first = next(f for f in frames if f.get("device_mode") == want)
+    return _verdict(CONFIRMED, "device_mode_on_bus", mode=want, t_ms=first["t_ms"])
+
+
+def _failsafe_on_link_loss(claim: dict, timeline: list[dict]) -> dict:
+    """I7 at L2: the device noticed the link died and said so, inside its budget.
+
+    The budget comes from the scenario, not from the measurement. Setting it after
+    seeing the data would make the claim unfalsifiable.
+    """
+    budget_ms = claim.get("budget_ms")
+    frames = _bus_frames(timeline)
+    if not frames:
+        return _verdict(INSUFFICIENT, "no_bus_observation", missing=["bus_frame"])
+    expiries = [f for f in frames if f.get("fault") == "watchdog_expired"]
+    if not expiries:
+        return _verdict(REFUTED, "watchdog_never_reported",
+                        observed=[f.get("fault") for f in frames][-5:])
+    return _verdict(CONFIRMED, "device_reported_watchdog_expiry",
+                    t_ms=expiries[0]["t_ms"], budget_ms=budget_ms)
+
+
+def _stale_ack_ignored(claim: dict, timeline: list[dict]) -> dict:
+    """I6 at L2: a replayed old ACK reached the bus and did not complete the new task.
+
+    Both halves are required. "The old ACK was on the bus" alone proves the injector
+    worked; "the new task was not completed by it" alone could be true because the
+    replay never happened. Together they are the property.
+    """
+    frames = _bus_frames(timeline)
+    if not frames:
+        return _verdict(INSUFFICIENT, "no_bus_observation", missing=["bus_frame"])
+    old_id = claim.get("stale_command_id")
+    replayed = [f for f in frames if f.get("command_id") == old_id]
+    if not replayed:
+        return _verdict(INSUFFICIENT, "stale_ack_never_observed", missing=[f"frame with command_id {old_id}"])
+    completed_after = [
+        e for e in timeline
+        if e["kind"] == "ack" and e.get("status") == "done" and e.get("level", 0) >= 2
+    ]
+    if completed_after:
+        return _verdict(REFUTED, "stale_ack_completed_a_task", stale_command_id=old_id)
+    return _verdict(CONFIRMED, "stale_ack_seen_and_ignored", stale_command_id=old_id)
+
+
 RULES = {
     "no_false_success": _no_false_success,
     "terminal_state": _terminal_state,
@@ -375,6 +499,11 @@ RULES = {
     "bundle_published": _bundle_published,
     "kill_observed": _kill_observed,
     "no_staging_residue": _no_staging_residue,
+    "stop_on_bus": _stop_on_bus,
+    "stop_ack_on_bus": _stop_ack_on_bus,
+    "mode_on_bus": _mode_on_bus,
+    "failsafe_on_link_loss": _failsafe_on_link_loss,
+    "stale_ack_ignored": _stale_ack_ignored,
     "trace_artifact_verified": _trace_artifact_verified,
     "raw_command_refused": _raw_command_refused,
 }

@@ -1,0 +1,82 @@
+# L2: bus-level acceptance on a virtual CAN bus.
+#
+# This job exists because a claim about what reached the device cannot be judged from
+# the host's own process. It needs a bus, and GitHub runners can provide one:
+# `sudo modprobe vcan && sudo ip link add ... type vcan` works there, as the system
+# under test's own CI already demonstrates.
+#
+# What it proves and what it does not:
+#
+#   proves   a STOP frame reached the bus and the device answered it, with kernel
+#            timestamps and a listener that cannot transmit
+#   does not prove   physical latency. vcan timings are scheduling artefacts; only the
+#            ordering of frames is judged here, never a millisecond budget.
+#
+# The negative controls run in the same job: if the injector stops working, the
+# claim that depends on it must stop confirming, and this job would notice.
+
+name: l2-vcan
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  bus-level:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: python -m pip install -e ".[dev]" ruff
+
+      - name: Create the virtual CAN interfaces
+        # Two interfaces, because the injector sits between them: the harness drives
+        # one side and the device under test listens on the other. A single interface
+        # would let the observer see its own traffic, which is not a bus.
+        run: |
+          sudo modprobe vcan
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link add dev vcan1 type vcan
+          sudo ip link set up vcan0
+          sudo ip link set up vcan1
+          ip -details link show vcan0
+          ip -details link show vcan1
+
+      - name: Confirm the observer can actually see a frame
+        # A bus-level job that silently observed nothing would pass every claim with
+        # `insufficient` and look like infrastructure, not evidence. This step sends one
+        # frame and requires the listener to read it back, so the job fails loudly if
+        # the setup is wrong.
+        env:
+          ASSURANCE_CAN_IFACE: vcan0
+        run: python ci/check_l2_bus.py
+
+      - name: Bus-level scenarios
+        env:
+          ASSURANCE_CAN_IFACE: vcan0
+        run: |
+          set +e
+          python -m assurance.cli gate socketcan --out l2-runs --json > l2-summary.json 2> l2-summary.txt
+          status=$?
+          set -e
+          cat l2-summary.txt
+          exit "$status"
+
+      - name: Upload L2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l2-evidence
+          path: |
+            l2-runs/
+            l2-summary.json
+            l2-summary.txt
+          if-no-files-found: warn

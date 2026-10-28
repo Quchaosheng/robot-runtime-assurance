@@ -11,7 +11,7 @@ import time
 KINDS = {
     "run_start", "task_start", "ack", "rejected", "cancel_sent", "cancelled",
     "timeout", "sut_exit", "sut_killed", "device_state", "claim_granted",
-    "claim_denied", "run_end", "note", "stop_sent", "stop_ack", "task_accepted", "bundle_verified", "trace_verified", "raw_command",
+    "claim_denied", "run_end", "note", "stop_sent", "stop_ack", "task_accepted", "bundle_verified", "trace_verified", "raw_command", "bus_frame",
 }
 
 
@@ -42,6 +42,8 @@ DEFAULT_LEVEL = {
     "stop_sent": 1,
     # the bus
     "stop_ack": 2,
+    # a frame this harness watched on the bus, never one the subject told it about
+    "bus_frame": 2,
 }
 
 

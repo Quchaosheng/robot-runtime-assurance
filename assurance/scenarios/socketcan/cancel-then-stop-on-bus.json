@@ -1,0 +1,37 @@
+{
+  "scenario_id": "socketcan/cancel-then-stop-on-bus",
+  "title": "A cancel must put a STOP frame on the bus, and the device must answer it.",
+  "seed": 4100,
+  "transport": "socketcan",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "can0",
+      "deadline_ms": 300,
+      "expect": "timeout"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I4-stop-frame-on-bus",
+      "kind": "stop_on_bus",
+      "invariant": "I4",
+      "requires": "L2"
+    },
+    {
+      "claim_id": "I5-stop-ack-correlates",
+      "kind": "stop_ack_on_bus",
+      "invariant": "I5",
+      "requires": "L2"
+    },
+    {
+      "claim_id": "I5-mode-on-bus",
+      "kind": "mode_on_bus",
+      "invariant": "I5",
+      "requires": "L2",
+      "expect_mode": "stopped"
+    }
+  ],
+  "expect_verdict": "insufficient"
+}

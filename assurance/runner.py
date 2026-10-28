@@ -57,6 +57,8 @@ def run_scenario(scenario: dict, out_dir: str | pathlib.Path) -> dict:
 
     if scenario["transport"] == "traceartifact":
         _run_trace_artifact(scenario, timeline)
+    elif scenario["transport"] == "socketcan":
+        _run_socketcan(scenario, transport, timeline, faults)
     elif scenario["transport"] == "workbench":
         _run_workbench(scenario, transport, timeline, faults)
     elif scenario["transport"] == "ros2action":
@@ -67,6 +69,45 @@ def run_scenario(scenario: dict, out_dir: str | pathlib.Path) -> dict:
     transport.stop(timeline)
     timeline.add("run_end", outcome="completed")
     return _finish(scenario, timeline, out_dir, transport_started=True)
+
+
+def _run_socketcan(scenario: dict, transport, timeline: Timeline, faults: list[dict]) -> None:
+    """Drive a CAN device while a separate, read-only socket watches the same bus.
+
+    The observer is a second socket, not the transport's own handle. That is the whole
+    point of L2: if the thing that sends also reports what was sent, its report is
+    another claim from the same source.
+
+    If the observer cannot open, the reasoning is recorded and the run continues - the
+    transport may still produce L1 evidence, and a run that produced some evidence is
+    better than one that refused to start. The L2 claims will then be `insufficient`
+    with the reason, which is the honest outcome.
+    """
+    from .observers.bus import BusObserver
+
+    observer = BusObserver(transport.iface)
+    watched = False
+    ok, why = observer.available()
+    if ok:
+        try:
+            observer.start()
+            watched = True
+            timeline.add("note", detail="bus observer attached", iface=transport.iface, level=1)
+        except OSError as error:
+            timeline.add("note", detail=f"bus observer could not attach: {error}", level=1)
+    else:
+        timeline.add("note", detail=f"bus observer unavailable: {why}", level=1)
+
+    try:
+        _run_session(scenario, transport, timeline, faults)
+    finally:
+        if watched:
+            observer.drain(until_ms=200)
+            count = observer.record(timeline)
+            timeline.add("note", detail="bus observer detached", frames=count, level=1)
+            observer.stop()
+        else:
+            timeline.add("note", detail="no bus observation was possible", level=1)
 
 
 def _run_workbench(scenario: dict, transport, timeline: Timeline, faults: list[dict]) -> None:

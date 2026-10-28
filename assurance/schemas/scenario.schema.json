@@ -159,7 +159,12 @@
               "kill_observed",
               "trace_artifact_verified",
               "raw_command_refused",
-              "no_staging_residue"
+              "no_staging_residue",
+              "stop_on_bus",
+              "stop_ack_on_bus",
+              "mode_on_bus",
+              "failsafe_on_link_loss",
+              "stale_ack_ignored"
             ]
           },
           "invariant": {
@@ -208,6 +213,18 @@
             "description": "evidence level this claim needs before it may be confirmed"
           },
           "stale_after_s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expect_mode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "budget_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stale_command_id": {
             "type": "integer",
             "minimum": 0
           }
