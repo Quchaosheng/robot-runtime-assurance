@@ -3,20 +3,26 @@
 # This job exists because a claim about what reached the device cannot be judged from
 # the host's own process. It needs a bus.
 #
-# A virtual CAN bus needs the vcan kernel module, and whether a runner has it is not
+# A virtual bus needs the vcan kernel module, and whether a runner has it is not
 # something this repository controls. GitHub's ubuntu-24.04 image ships the kernel
-# without its extra modules, so `modprobe vcan` answers "Module vcan not found in
-# directory /lib/modules/<release>". Two rounds of this job failed that way before the
-# annotation named it.
+# without its extra modules; a run has already failed with
+# "Module vcan not found in directory /lib/modules/<release>".
 #
-# So the setup is a **preflight**, and the bus job runs only when a bus really exists:
+# Everything therefore happens in ONE job. An earlier version split the probe and the
+# tests across two jobs and broke immediately: a vcan interface created in the probe
+# job exists only on that runner, so the test job on a different machine had no
+# interface to use.
 #
-#   vcan available      -> the L2 scenarios run and judge real frames
-#   vcan not available  -> the job is SKIPPED, with the reason in the summary
+# The honest states this job can end in:
 #
-# A skipped job is visibly not-evidence. That is the honest third state, and it is
-# better than both alternatives: a permanently red job teaches people to ignore the
-# workflow, and a green job that observed nothing is a false pass.
+#   vcan available      -> the L2 scenarios judge real frames, and the job is green
+#                           only if they match their expected verdicts
+#   vcan not available  -> the setup is recorded as a warning annotation and a note in
+#                           the summary, and the test steps are skipped. The job is
+#                           green but says, in two places, that L2 did not execute.
+#
+# A skipped L2 is not a pass. The invariant rows it covers stay
+# `insufficient_evidence` in every bundle until a runner with vcan runs them.
 
 name: l2-vcan
 
@@ -29,68 +35,7 @@ permissions:
   contents: read
 
 jobs:
-  preflight:
-    runs-on: ubuntu-24.04
-    outputs:
-      vcan: ${{ steps.probe.outputs.vcan }}
-    steps:
-      - name: Try to make a virtual CAN bus
-        id: probe
-        shell: bash
-        run: |
-          set -u
-          attempt() {
-            local label="$1"; shift
-            if out=$("$@" 2>&1); then
-              echo "ok: $label"
-              return 0
-            fi
-            echo "::notice title=${label}::$(echo "$out" | head -2 | tr '\n' ' ')"
-            return 1
-          }
-
-          echo "kernel: $(uname -r)"
-          # The extra-modules package name differs between generic and cloud kernels.
-          sudo apt-get update -qq || true
-          for package in \
-            "linux-modules-extra-$(uname -r)" \
-            "linux-modules-extra-azure" \
-            "linux-modules-extra-generic"
-          do
-            attempt "apt install ${package}" sudo apt-get install -y -qq --no-install-recommends "$package" || true
-          done
-
-          for module in can can_raw can-dev vcan; do
-            attempt "modprobe ${module}" sudo modprobe "$module" || true
-          done
-
-          if attempt "ip link add vcan0" sudo ip link add dev vcan0 type vcan; then
-            sudo ip link set up vcan0
-            ip -details link show vcan0
-            echo "vcan=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning title=L2 not executed::this runner cannot create a vcan interface, so the bus-level job will be skipped. The reason is in the notices above."
-            echo "vcan=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Record the outcome
-        run: |
-          {
-            echo "### L2 bus-level acceptance"
-            if [ "${{ steps.probe.outputs.vcan }}" = "true" ]; then
-              echo "vcan is available on this runner; the bus-level scenarios will run."
-            else
-              echo "**Skipped: this runner cannot create a vcan interface.**"
-              echo ""
-              echo "The L2 scenarios were not executed. This is not a pass — the"
-              echo "invariant rows they cover stay \`insufficient_evidence\` until a"
-              echo "runner with the vcan module runs them."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
   bus-level:
-    needs: preflight
-    if: needs.preflight.outputs.vcan == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -101,16 +46,53 @@ jobs:
 
       - run: python -m pip install -e ".[dev]" ruff
 
-      - name: Create the second interface
-        # The injector needs both sides: the harness drives one, the device listens on
-        # the other. A single interface would let the observer see its own traffic,
-        # which is not a bus.
+      - name: Build a virtual CAN bus
+        id: bus
+        shell: bash
         run: |
-          sudo ip link add dev vcan1 type vcan
-          sudo ip link set up vcan1
-          ip -details link show vcan1
+          set -u
+          attempt() {
+            local label="$1"; shift
+            if out=$("$@" 2>&1); then
+              echo "ok: ${label}"
+              return 0
+            fi
+            echo "::notice title=${label}::$(echo "$out" | head -2 | tr '\n' ' ')"
+            return 1
+          }
+
+          echo "kernel: $(uname -r)"
+          sudo apt-get update -qq || true
+          for package in \
+            "linux-modules-extra-$(uname -r)" \
+            "linux-modules-extra-azure" \
+            "linux-modules-extra-generic"
+          do
+            attempt "apt install ${package}" sudo apt-get install -y -qq --no-install-recommends "$package" || true
+          done
+          for module in can can_raw can-dev vcan; do
+            attempt "modprobe ${module}" sudo modprobe "$module" || true
+          done
+
+          # Two interfaces in the same job: the injector needs both sides, and a single
+          # interface would let the observer see its own traffic.
+          ok=1
+          for iface in vcan0 vcan1; do
+            attempt "ip link add ${iface}" sudo ip link add dev "$iface" type vcan || ok=0
+          done
+          if [ "$ok" -eq 1 ]; then
+            sudo ip link set up vcan0
+            sudo ip link set up vcan1
+            ip -details link show vcan0
+            ip -details link show vcan1
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=L2 not executed::this runner cannot create a vcan interface; the bus-level scenarios were skipped. See the notices above for the failing command."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Confirm the observer can actually see a frame
+        if: steps.bus.outputs.ready == 'true'
         # A bus-level job that silently observed nothing would pass every claim with
         # `insufficient` and look like infrastructure rather than evidence. This step
         # sends one STOP frame and requires the listener to read it back.
@@ -119,6 +101,7 @@ jobs:
         run: python ci/check_l2_bus.py
 
       - name: Bus-level scenarios
+        if: steps.bus.outputs.ready == 'true'
         env:
           ASSURANCE_CAN_IFACE: vcan0
         run: |
@@ -129,8 +112,28 @@ jobs:
           cat l2-summary.txt
           exit "$status"
 
-      - name: Upload L2 evidence
+      - name: Record whether L2 executed
         if: always()
+        run: |
+          {
+            echo "### L2 bus-level acceptance"
+            echo ""
+            if [ "${{ steps.bus.outputs.ready }}" = "true" ]; then
+              echo "vcan was available; the bus-level scenarios ran."
+              echo ""
+              echo '```'
+              cat l2-summary.txt 2>/dev/null || echo "(no summary)"
+              echo '```'
+            else
+              echo "**Not executed: this runner cannot create a vcan interface.**"
+              echo ""
+              echo "This is not a pass. The invariants L2 would cover stay"
+              echo "\`insufficient_evidence\` in every bundle produced here."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload L2 evidence
+        if: always() && steps.bus.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: l2-evidence
