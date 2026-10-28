@@ -94,6 +94,41 @@ from a virtual bus would be a fabricated number with a decimal point.
 
 That is what L3 is for, and it is why the L3 column is empty rather than approximated.
 
+## Scenarios that need an environment
+
+A scenario may declare the capability it needs, because the evidence depends on the
+host rather than on the code:
+
+```json
+"requires_capability": "vcan"
+```
+
+`ci/check_scenarios.py` skips such a scenario when the capability is absent and prints
+`SKIP <name> (needs vcan: ...)`, counted separately from the passes. A run on a host
+without a bus therefore never reads as "the L2 scenarios passed" — it reads as "one
+scenario did not execute", which is the true statement.
+
+`assurance gate` reports the same scenario as `BLOCK` rather than `PASS`.
+
+## L2 in CI
+
+`.github/workflows/l2-vcan.yml` builds a virtual bus on the runner and runs the
+socketcan suite. It has run green, which means all three steps really happened:
+interfaces created, an independently-observed frame decoded, scenarios judged.
+
+Getting there took three fixes, each found by the job rather than by reading the code:
+
+1. `modprobe vcan` alone fails — the CAN core modules must be loaded first;
+2. GitHub's image ships the kernel without its extra modules, so `linux-modules-extra`
+   for the running kernel has to be installed before `vcan.ko` exists;
+3. the observer itself crashed: `socket.SO_TIMESTAMPNS` does not exist in every Python
+   build, and even when it did, the code was stamping frames with the process clock
+   rather than reading the kernel's. Both are fixed, and a regression test deletes the
+   constant and requires `start()` to succeed.
+
+Point 3 is the argument for a bus-level job existing at all. No local test could reach
+it, because every local test stops at `available()` on a host with no vcan.
+
 ## What the matrix means
 
 `python3 -m assurance.cli matrix` prints invariant × level, filled only where a

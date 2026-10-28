@@ -21,7 +21,29 @@ import pathlib
 import subprocess
 import sys
 
+# The script is run from the repository root by CI but may also be run from ci/, so the
+# package has to be importable either way.
+_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 BLOCKED_ON_UNAVAILABLE = {"transport_unavailable"}
+
+
+def capability_available(name: str) -> tuple[bool, str]:
+    """Is the environment capability a scenario declares actually present?
+
+    A scenario may say it needs something the host must provide (today only `vcan`).
+    Skipping it is not the same as passing it: the skip is printed with the reason and
+    counted separately, so a run on a host without a bus never reads as "the L2
+    scenarios passed".
+    """
+    if name == "vcan":
+        from assurance.observers.bus import BusObserver
+
+        ok, why = BusObserver("vcan0").available()
+        return ok, why
+    return False, f"unknown capability {name!r}"
 
 
 def shipped_scenarios() -> list[str]:
@@ -30,6 +52,12 @@ def shipped_scenarios() -> list[str]:
         capture_output=True, text=True, check=True,
     )
     return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
+
+
+def required_capability(scenario: str) -> str | None:
+    from assurance.registry import load
+
+    return load(scenario).get("requires_capability")
 
 
 def parse_first_json(text: str) -> dict:
@@ -43,7 +71,15 @@ def parse_first_json(text: str) -> dict:
 def main() -> int:
     failures = 0
     blocked = 0
+    skipped = 0
     for scenario in shipped_scenarios():
+        needed = required_capability(scenario)
+        if needed:
+            ok, why = capability_available(needed)
+            if not ok:
+                skipped += 1
+                print(f"SKIP     {scenario} (needs {needed}: {why})")
+                continue
         result = subprocess.run(
             [sys.executable, "-m", "assurance.cli", "run", scenario],
             capture_output=True, text=True, check=False,
@@ -83,7 +119,9 @@ def main() -> int:
     else:
         print("MATRIX OK  README table matches the register")
 
-    print(f"\n{total} scenarios, {failures} mismatch(es), {blocked} blocked")
+    print(f"\n{total} scenarios, {failures} mismatch(es), {blocked} blocked, {skipped} skipped")
+    if skipped:
+        print("A skipped scenario did not execute. Its invariants stay unproven on this host.")
     return 1 if failures else 0
 
 

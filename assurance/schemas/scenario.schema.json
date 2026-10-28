@@ -289,6 +289,10 @@
           }
         }
       }
+    },
+    "requires_capability": {
+      "type": "string",
+      "minLength": 1
     }
   }
 }

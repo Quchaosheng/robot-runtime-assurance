@@ -1,0 +1,25 @@
+{
+  "scenario_id": "socketcan/stop-frame-observed",
+  "title": "The STOP frame this harness issues is really seen by an independent listener on the bus.",
+  "seed": 4101,
+  "transport": "socketcan",
+  "requires_capability": "vcan",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "epoch": 1,
+      "resource": "can0",
+      "deadline_ms": 300,
+      "expect": "timeout"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "I4-stop-frame-on-bus",
+      "kind": "stop_on_bus",
+      "invariant": "I4",
+      "requires": "L2"
+    }
+  ],
+  "expect_verdict": "pass"
+}
