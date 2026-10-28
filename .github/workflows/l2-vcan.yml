@@ -41,8 +41,18 @@ jobs:
         # Two interfaces, because the injector sits between them: the harness drives
         # one side and the device under test listens on the other. A single interface
         # would let the observer see its own traffic, which is not a bus.
+        #
+        # Modules are loaded in dependency order. `vcan` needs the CAN core and the
+        # raw protocol module first; loading it alone fails on a clean runner, which
+        # is how the first version of this job failed.
         run: |
+          set -x
+          uname -a
+          sudo modprobe can || true
+          sudo modprobe can_raw || true
+          sudo modprobe can-dev || true
           sudo modprobe vcan
+          lsmod | grep -E '^(can|vcan)' || true
           sudo ip link add dev vcan0 type vcan
           sudo ip link add dev vcan1 type vcan
           sudo ip link set up vcan0
