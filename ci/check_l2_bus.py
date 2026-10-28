@@ -32,21 +32,31 @@ from assurance.wire.mcu_wire_v1 import CAN_ID_STOP, WireError, decode, stop_comm
 IFACE = os.environ.get("ASSURANCE_CAN_IFACE", "vcan0")
 
 
+def fail(message: str) -> int:
+    """Report a failure both to the terminal and as a CI annotation.
+
+    The job log endpoint is not always readable by the tools investigating a failure,
+    while check-run annotations are. So every failure is emitted as an annotation too,
+    and the message says which step broke rather than only the exit code.
+    """
+    print(f"FAIL: {message}")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::error title=L2 bus check::{message}")
+    return 1
+
+
 def main() -> int:
     if not hasattr(socket, "AF_CAN"):
-        print("FAIL: this Python has no AF_CAN support")
-        return 1
+        return fail("this Python has no AF_CAN support")
     if not os.path.isdir(f"/sys/class/net/{IFACE}"):
-        print(f"FAIL: {IFACE} does not exist; the workflow must create it first")
-        return 1
+        return fail(f"{IFACE} does not exist; the workflow must create it first")
 
     # The observer must attach before the frame is sent, or it will miss it.
     observer = BusObserver(IFACE)
     try:
         observer.start()
     except OSError as error:
-        print(f"FAIL: the observer could not attach to {IFACE}: {error}")
-        return 1
+        return fail(f"the observer could not attach to {IFACE}: {error}")
 
     arbitration_id, data = stop_command(0x8001)
     sender = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
@@ -56,30 +66,27 @@ def main() -> int:
         time.sleep(0.05)
         frames = observer.drain(until_ms=250)
     except OSError as error:
-        print(f"FAIL: could not send or receive on {IFACE}: {error}")
-        return 1
+        return fail(f"could not send or receive on {IFACE}: {error}")
     finally:
         sender.close()
         observer.stop()
 
     if not frames:
-        print(f"FAIL: sent one STOP frame on {IFACE} and the observer saw nothing.")
-        print("      A green L2 job with no observation would be a false pass, so this is fatal.")
-        return 1
+        return fail(
+            f"sent one STOP frame on {IFACE} and the observer saw nothing. "
+            "A green L2 job with no observation would be a false pass."
+        )
 
     stops = [frame for frame in frames if frame.can_id == CAN_ID_STOP]
     if not stops:
-        print(f"FAIL: {len(frames)} frame(s) observed but none was a STOP on 0x080:")
-        for frame in frames[:5]:
-            print(f"      0x{frame.can_id:03x} {frame.data.hex(' ')} kind={frame.kind}")
-        return 1
+        detail = ", ".join(f"0x{frame.can_id:03x}/{frame.kind}" for frame in frames[:5])
+        return fail(f"{len(frames)} frame(s) observed but none was a STOP on 0x080: {detail}")
 
     frame = stops[0]
     try:
         decoded = decode(frame.can_id, frame.data)
     except WireError as error:
-        print(f"FAIL: the STOP frame did not decode: {error}")
-        return 1
+        return fail(f"the STOP frame did not decode: {error}")
 
     print(f"OK: {IFACE} carried a STOP frame the observer read back and decoded.")
     print(f"    can_id=0x{frame.can_id:03x} command_id=0x{decoded.command_id:04x} "
