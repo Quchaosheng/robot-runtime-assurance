@@ -92,6 +92,7 @@ python3 -m assurance.cli junit  runs/nominal-normal-task--local --out junit.xml
 - [R02 recall card](reports/R02-背诵卡.md)
 - [R03 first delivery](reports/R03-交付说明.md)
 - [R04 second delivery: black-box target, I2, SocketCAN, latency evidence](reports/R04-交付说明-第二轮.md)
+- [L3 bench plan: BOM, wiring, budgets and what is not built yet](docs/bench.md)
 
 ## Pointing the harness at a real system
 
